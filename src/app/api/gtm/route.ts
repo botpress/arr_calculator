@@ -22,7 +22,7 @@ function parsePayload(raw: Partial<RequestBody>) {
 
 async function run(raw: Partial<RequestBody>) {
   const payload = parsePayload(raw);
-  const cacheKey = `api:gtm:weekly:${payload.weekEndDate || "default"}`;
+  const cacheKey = `api:gtm:weekly:v2:${payload.weekEndDate || "default"}`;
   return getOrSetCache(cacheKey, CACHE_TTL_MS, () => generateGtmReport(payload));
 }
 

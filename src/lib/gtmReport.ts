@@ -61,6 +61,7 @@ export type GtmReportResponse = {
   targetCurrency: string;
   businessDays: { elapsed: number; total: number };
   metrics: GtmMetric[];
+  weekArrBridge: GtmArrBridgeRow[];
   arrBridge: GtmArrBridgeRow[];
   targetRows: ReturnType<typeof getGtmTargetRows>;
   warnings: string[];
@@ -334,6 +335,7 @@ export async function generateGtmReport(input: { weekEndDate?: string }): Promis
     targetCurrency: String(FX_TARGET_CURRENCY || "USD").toUpperCase(),
     businessDays: { elapsed: elapsedBusinessDays, total: totalBusinessDays },
     metrics,
+    weekArrBridge: currentBridge,
     arrBridge,
     targetRows: getGtmTargetRows(monthKey),
     warnings,

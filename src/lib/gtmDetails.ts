@@ -38,7 +38,7 @@ export type GtmDetailResponse = {
 
 export type GtmDetailRequest =
   | { kind: "metric"; weekEndDate?: string; metricId: string; period: GtmDetailPeriod }
-  | { kind: "bridge"; weekEndDate?: string; segment: GtmBridgeSegment; field: GtmBridgeField };
+  | { kind: "bridge"; weekEndDate?: string; segment: GtmBridgeSegment; field: GtmBridgeField; period?: "week" | "mtd" };
 
 type DateRange = {
   startDate: string;
@@ -679,11 +679,14 @@ export function validateGtmDetailRequest(raw: Partial<GtmDetailRequest>): GtmDet
   const weekEndDate = valueString(raw.weekEndDate) || undefined;
   if (weekEndDate) parseIsoDate(weekEndDate);
   if (kind === "bridge") {
-    const segment = valueString((raw as Partial<Extract<GtmDetailRequest, { kind: "bridge" }>>).segment) as GtmBridgeSegment;
-    const field = valueString((raw as Partial<Extract<GtmDetailRequest, { kind: "bridge" }>>).field) as GtmBridgeField;
+    const bridgeRequest = raw as Partial<Extract<GtmDetailRequest, { kind: "bridge" }>>;
+    const segment = valueString(bridgeRequest.segment) as GtmBridgeSegment;
+    const field = valueString(bridgeRequest.field) as GtmBridgeField;
+    const period = (valueString(bridgeRequest.period) || "mtd") as "week" | "mtd";
     if (!["selfserve", "sales_assist", "salesled", "total"].includes(segment)) throw new Error("Invalid segment.");
     if (!["beginningArr", "newArr", "expansionArr", "contractionArr", "churnArr", "transferArr", "endingArr", "netNewArr"].includes(field)) throw new Error("Invalid bridge field.");
-    return { kind, weekEndDate, segment, field };
+    if (!["week", "mtd"].includes(period)) throw new Error("Invalid bridge period.");
+    return { kind, weekEndDate, segment, field, period };
   }
   if (kind === "metric") {
     const metricId = valueString((raw as Partial<Extract<GtmDetailRequest, { kind: "metric" }>>).metricId);
@@ -699,7 +702,7 @@ export function validateGtmDetailRequest(raw: Partial<GtmDetailRequest>): GtmDet
 
 export async function queryGtmDetails(request: GtmDetailRequest): Promise<GtmDetailResponse> {
   if (request.kind === "bridge") {
-    const range = resolveRange(request.weekEndDate, "mtd");
+    const range = resolveRange(request.weekEndDate, request.period || "mtd");
     return queryArrMovementDetails({
       range,
       segment: request.segment,

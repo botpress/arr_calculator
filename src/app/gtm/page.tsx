@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import type { GtmMetric, GtmReportResponse } from "@/lib/gtmReport";
+import type { GtmArrBridgeRow, GtmMetric, GtmReportResponse } from "@/lib/gtmReport";
 import type {
   GtmBridgeField,
   GtmBridgeSegment,
@@ -412,14 +412,29 @@ export default function GtmPage() {
     });
   }
 
-  function showBridgeDetail(segment: GtmBridgeSegment, label: string, field: GtmBridgeField, value: number) {
+  function showBridgeDetail(segment: GtmBridgeSegment, label: string, field: GtmBridgeField, value: number, period: "week" | "mtd" = "mtd") {
     if (!data) return;
     void showRemoteDetail({
-      title: `${label} · ${BRIDGE_FIELDS.find((item) => item.field === field)?.label || field}`,
+      title: `${label} · ${BRIDGE_FIELDS.find((item) => item.field === field)?.label || field} · ${period === "week" ? `week ending ${dateLabel(data.weekEndDate)}` : `MTD through ${dateLabel(data.weekEndDate)}`}`,
       displayedValue: value,
       format: "currency",
-      request: { kind: "bridge", weekEndDate: data.weekEndDate, segment, field },
+      request: { kind: "bridge", weekEndDate: data.weekEndDate, segment, field, period },
     });
+  }
+
+  function renderArrBridge(rows: GtmArrBridgeRow[], period: "week" | "mtd") {
+    if (!data) return null;
+    return (
+      <div className="stripe-ui__table-wrap">
+        <table className="stripe-ui__table gtm__table">
+          <thead><tr><th>Motion</th>{BRIDGE_FIELDS.map((item) => <th key={item.field} className="stripe-ui__num">{item.label}</th>)}</tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.segment} className={row.segment === "total" ? "gtm__total-row" : ""}><td>{row.label}</td>{BRIDGE_FIELDS.map(({ field }) => {
+            const value = row[field];
+            return <td key={field} className="stripe-ui__num">{detailValueButton({ value, text: formatMoney(value, data.targetCurrency), label: `${row.label} ${field}`, onClick: () => showBridgeDetail(row.segment, row.label, field, value, period) })}</td>;
+          })}</tr>)}</tbody>
+        </table>
+      </div>
+    );
   }
 
   function renderMetricActual(metric: GtmMetric, period: GtmDetailPeriod) {
@@ -572,17 +587,15 @@ export default function GtmPage() {
           </section>
 
           <section className="stripe-ui__panel ui-reveal ui-reveal-2">
+            <h2 className="stripe-ui__panel-title">ARR by motion — week ending {dateLabel(data.weekEndDate)}</h2>
+            <p className="stripe-ui__panel-subtitle">The weekly bridge covers {dateLabel(data.weekStartDate)} through {dateLabel(data.weekEndDate)} using the same combined CARR-by-motion model and legacy non-cloud HubSpot ARR as the MTD view.</p>
+            {renderArrBridge(data.weekArrBridge, "week")}
+          </section>
+
+          <section className="stripe-ui__panel ui-reveal ui-reveal-2">
             <h2 className="stripe-ui__panel-title">ARR by motion — MTD through {dateLabel(data.weekEndDate)}</h2>
             <p className="stripe-ui__panel-subtitle">The bridge aggregates Sunday-ending weekly rows from the combined CARR-by-motion model plus legacy HubSpot ARR (deployment type is not Cloud) in BigQuery. No live HubSpot API call is made.</p>
-            <div className="stripe-ui__table-wrap">
-              <table className="stripe-ui__table gtm__table">
-                <thead><tr><th>Motion</th>{BRIDGE_FIELDS.map((item) => <th key={item.field} className="stripe-ui__num">{item.label}</th>)}</tr></thead>
-                <tbody>{data.arrBridge.map((row) => <tr key={row.segment} className={row.segment === "total" ? "gtm__total-row" : ""}><td>{row.label}</td>{BRIDGE_FIELDS.map(({ field }) => {
-                  const value = row[field];
-                  return <td key={field} className="stripe-ui__num">{detailValueButton({ value, text: formatMoney(value, data.targetCurrency), label: `${row.label} ${field}`, onClick: () => showBridgeDetail(row.segment, row.label, field, value) })}</td>;
-                })}</tr>)}</tbody>
-              </table>
-            </div>
+            {renderArrBridge(data.arrBridge, "mtd")}
           </section>
 
           <section className="stripe-ui__panel ui-reveal ui-reveal-3">
