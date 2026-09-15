@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type CombineMode = "grouped" | "simple";
@@ -141,17 +140,6 @@ export default function NdrGdrPage() {
             <p className="stripe-ui__subtitle">
               Cohort retention matrix by month. Rows are cohort start month; columns are observed month.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-billing-overview" className="stripe-ui__hero-link">
-              Open Combined Billing Overview
-            </Link>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/tofu" className="stripe-ui__hero-link">
-              Open TOFU
-            </Link>
           </div>
         </div>
       </section>

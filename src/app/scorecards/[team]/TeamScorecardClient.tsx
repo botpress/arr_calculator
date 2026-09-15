@@ -180,7 +180,7 @@ export default function TeamScorecardClient({
           </div>
           <div className="team-scorecards__hero-links">
             <Link href={tvMode ? "/tv/scorecards" : "/scorecards"} className="stripe-ui__hero-link">All teams</Link>
-            {tvMode ? <span className="team-scorecards__tv-status">TV view · auto-refreshes</span> : <Link href="/gtm" className="stripe-ui__hero-link">Open GTM</Link>}
+            {tvMode ? <span className="team-scorecards__tv-status">TV view · auto-refreshes</span> : null}
           </div>
         </div>
       </section>

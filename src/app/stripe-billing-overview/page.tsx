@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadSvgAsPng } from "@/lib/chartDownload";
 import DraftInvoiceAdminControls from "./DraftInvoiceAdminControls";
@@ -1435,23 +1434,6 @@ export default function StripeBillingOverviewPage() {
               Trend dashboard for MRR, growth components, MRR growth rate, ARR, and ARR growth using customer-level
               MRR transitions from Stripe MRR change events.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">
-              Open HubSpot report
-            </Link>
-            <Link href="/ai-spend" className="stripe-ui__hero-link">
-              Open AI spend
-            </Link>
-            <Link href="/quickbooks" className="stripe-ui__hero-link">
-              Open QuickBooks
-            </Link>
           </div>
         </div>
       </section>

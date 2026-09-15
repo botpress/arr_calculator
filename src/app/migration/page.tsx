@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MigrationCustomerExportRow, MigrationReportResponse, MigrationSource } from "@/lib/migrationReport";
 
@@ -139,7 +138,6 @@ export default function MigrationPage() {
   const [endDate, setEndDate] = useState(() => todayInToronto());
   const [appliedStartDate, setAppliedStartDate] = useState(MIN_MIGRATION_DATE);
   const [appliedEndDate, setAppliedEndDate] = useState(() => todayInToronto());
-  const [sessionRoles, setSessionRoles] = useState<string[]>([]);
   const maximumDate = todayInToronto();
 
   const load = useCallback(async (nextStartDate: string, nextEndDate: string) => {
@@ -162,28 +160,8 @@ export default function MigrationPage() {
   }, []);
 
   useEffect(() => {
-    let active = true;
     const initialEndDate = todayInToronto();
     void load(MIN_MIGRATION_DATE, initialEndDate);
-    const loadSession = async () => {
-      try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
-        if (!response.ok) return;
-        const payload = (await response.json()) as { user?: { role?: string; roles?: string[] } };
-        if (active) {
-          const roles = Array.isArray(payload.user?.roles)
-            ? payload.user.roles
-            : [String(payload.user?.role || "")];
-          setSessionRoles(roles.map((role) => String(role || "").trim().toLowerCase()).filter(Boolean));
-        }
-      } catch {
-        if (active) setSessionRoles([]);
-      }
-    };
-    void loadSession();
-    return () => {
-      active = false;
-    };
   }, [load]);
 
   function applyDateRange(event: React.FormEvent<HTMLFormElement>) {
@@ -274,23 +252,6 @@ export default function MigrationPage() {
               Customers and ARR migrated from V2/V3 to V4 plans since April 2026, combining Stripe BigQuery and closed-won HubSpot Sales Default Pipeline deals.
             </p>
           </div>
-          {sessionRoles.some((role) => ["admin", "viewer", "sales", "gtm"].includes(role)) ? (
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-              {sessionRoles.includes("admin") || sessionRoles.includes("viewer") ? (
-                <>
-                  <Link href="/account-management" className="stripe-ui__hero-link">Open Account Management</Link>
-                  <Link href="/hubspot" className="stripe-ui__hero-link">Open HubSpot report</Link>
-                  <Link href="/combined-all-subs" className="stripe-ui__hero-link">Open Combined All Subs</Link>
-                </>
-              ) : null}
-              {!sessionRoles.includes("admin") && sessionRoles.includes("sales") ? (
-                <Link href="/commissions" className="stripe-ui__hero-link">Open Commissions</Link>
-              ) : null}
-              {!sessionRoles.includes("admin") && sessionRoles.includes("gtm") ? (
-                <Link href="/gtm" className="stripe-ui__hero-link">Open GTM</Link>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       </section>
 

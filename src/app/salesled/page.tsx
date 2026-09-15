@@ -1,6 +1,10 @@
 import SegmentArrPage from "@/app/segment-arr/SegmentArrPage";
+import { notFound } from "next/navigation";
 
 export default function SalesledPage() {
+  const archived = true;
+  if (archived) notFound();
+
   return (
     <SegmentArrPage
       segment="salesled"

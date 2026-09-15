@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type LeasePredictionTerms = {
@@ -364,9 +363,6 @@ export default function LeasePredictionPage() {
               Uploaded files persist until you delete them.
             </p>
           </div>
-          <Link className="stripe-ui__hero-link" href="/combined-billing-overview">
-            Combined billing overview
-          </Link>
         </div>
       </header>
 

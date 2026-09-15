@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AccountManagementAccountRow,
@@ -263,11 +262,6 @@ export default function AccountManagementPage() {
             <p className="stripe-ui__subtitle">
               Monthly NRR for Chloé, Sam, and Kieran, using their prior-month Existing Business portfolio and the HubSpot CARR calculation.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/migration" className="stripe-ui__hero-link">Open Migration</Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">Open HubSpot report</Link>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">Open Combined All Subs</Link>
           </div>
         </div>
       </section>

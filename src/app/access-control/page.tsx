@@ -144,11 +144,6 @@ export default async function AccessControlPage(props: { searchParams: AccessCon
               Manage who can sign in and which parts of the site they can access. Current admin: <strong>{currentEmail}</strong>.
             </p>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Back to Combined All Subs
-            </Link>
-          </div>
         </div>
       </section>
 

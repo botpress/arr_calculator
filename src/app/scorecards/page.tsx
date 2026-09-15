@@ -13,10 +13,6 @@ export default function TeamScorecardsPage() {
               One page per team, preserving the V2 scorecard and the added Finance and People Ops metrics. Supported actuals are calculated from connected sources; the rest stay blank.
             </p>
           </div>
-          <div className="team-scorecards__hero-links">
-            <Link href="/gtm" className="stripe-ui__hero-link">Open GTM</Link>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">Combined All Subs</Link>
-          </div>
         </div>
       </section>
 

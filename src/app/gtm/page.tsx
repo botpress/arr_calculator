@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { GtmArrBridgeRow, GtmMetric, GtmReportResponse } from "@/lib/gtmReport";
 import type {
@@ -140,26 +139,6 @@ export default function GtmPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<DetailModalState | null>(null);
-  const [sessionRoles, setSessionRoles] = useState<string[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    void fetch("/api/auth/session", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((session: { user?: { role?: string; roles?: string[] } } | null) => {
-        if (!active) return;
-        const roles = Array.isArray(session?.user?.roles)
-          ? session.user.roles
-          : [String(session?.user?.role || "")];
-        setSessionRoles(roles.map((role) => String(role || "").trim().toLowerCase()).filter(Boolean));
-      })
-      .catch(() => {
-        if (active) setSessionRoles([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const run = useCallback(async () => {
     setLoading(true);
@@ -221,9 +200,6 @@ export default function GtmPage() {
     counts[metric.status] = (counts[metric.status] || 0) + 1;
     return counts;
   }, {} as Record<string, number>);
-  const canViewStandard = sessionRoles.includes("admin") || sessionRoles.includes("viewer");
-  const canViewSales = sessionRoles.includes("sales");
-  const canViewMigration = sessionRoles.includes("account_management");
 
   function showLocalDetail(args: {
     title: string;
@@ -510,20 +486,6 @@ export default function GtmPage() {
             </p>
           </div>
           <div className="gtm__hero-links">
-            {canViewStandard ? (
-              <>
-                <Link href="/plg" className="stripe-ui__hero-link">PLG &amp; Sales NRR</Link>
-                <Link href="/combined-all-subs" className="stripe-ui__hero-link">Combined All Subs</Link>
-                <Link href="/scorecards" className="stripe-ui__hero-link">Team Scorecards</Link>
-                <Link href="/tofu" className="stripe-ui__hero-link">ARR detail</Link>
-              </>
-            ) : null}
-            {!canViewStandard && canViewSales ? (
-              <Link href="/commissions" className="stripe-ui__hero-link">Commissions</Link>
-            ) : null}
-            {!canViewStandard && canViewMigration ? (
-              <Link href="/migration" className="stripe-ui__hero-link">Migration</Link>
-            ) : null}
             <button className="stripe-ui__hero-link gtm__link-button" type="button" onClick={downloadCsv} disabled={!data}>Download CSV</button>
           </div>
         </div>

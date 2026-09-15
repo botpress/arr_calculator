@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type CombineMode = "grouped" | "simple";
@@ -468,58 +467,6 @@ export default function CombinedAllSubsPage() {
               Compare two views of the same dataset: Grouped mode matches Stripe customers to HubSpot accounts via
               associated contact emails, while Simple mode just appends HubSpot and Stripe rows without matching.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-billing-overview" className="stripe-ui__hero-link">
-              Open Combined Billing Overview
-            </Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">
-              Open HubSpot report
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
-            <Link href="/tofu" className="stripe-ui__hero-link">
-              Open TOFU
-            </Link>
-            <Link href="/ndr-gdr" className="stripe-ui__hero-link">
-              Open NDR/GDR
-            </Link>
-            <Link href="/model-update" className="stripe-ui__hero-link">
-              Open Model Update
-            </Link>
-            <Link href="/salesled" className="stripe-ui__hero-link">
-              Open Sales-led
-            </Link>
-            <Link href="/selfserve" className="stripe-ui__hero-link">
-              Open Self Serve
-            </Link>
-            <Link href="/weekly-dashboard" className="stripe-ui__hero-link">
-              Open Weekly Dashboard
-            </Link>
-            <Link href="/gtm" className="stripe-ui__hero-link">
-              Open GTM
-            </Link>
-            <Link href="/scorecards" className="stripe-ui__hero-link">
-              Open Team Scorecards
-            </Link>
-            <Link href="/metrics-assistant" className="stripe-ui__hero-link">
-              Open Metrics Assistant (Under maintenance, do not use)
-            </Link>
-            <Link href="/account-management" className="stripe-ui__hero-link">
-              Open Account Management
-            </Link>
-            <Link href="/migration" className="stripe-ui__hero-link">
-              Open Migration
-            </Link>
-            <Link href="/access-control" className="stripe-ui__hero-link">
-              Open Access Control
-            </Link>
-            {isAdmin ? (
-              <Link href="/commissions" className="stripe-ui__hero-link">
-                Open Commissions
-              </Link>
-            ) : null}
           </div>
         </div>
       </section>
