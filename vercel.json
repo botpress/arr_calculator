@@ -25,10 +25,6 @@
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/slack/daily-arr-summary",
-      "schedule": "0 12 * * *"
-    },
-    {
       "path": "/api/cache/nightly-sync",
       "schedule": "0 8 * * *"
     },

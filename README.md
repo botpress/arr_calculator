@@ -61,7 +61,6 @@ Vercel cron runs Stripe sync automatically every 5 minutes:
 - `55 23 * * *` (`/api/stripe-upcoming-snapshots-cleanup`) end-of-day cleanup: keep only latest same-day upcoming snapshot
 - `5 * * * *` (`/api/hubspot-current-metrics-sync`) hourly HubSpot deal metric property update
 - `0 */6 * * *` (`/api/quickbooks/keepalive`) QuickBooks OAuth token keepalive
-- `0 12 * * *` (`/api/slack/daily-arr-summary`) daily Slack message with projected ARR EOM stats
 - `5 9 1 * *` (`/api/billing/monthly-draft-invoices`) monthly Stripe draft-invoice generation at 09:05 UTC on the first day
 
 `/api/stripe-sync` accepts:
