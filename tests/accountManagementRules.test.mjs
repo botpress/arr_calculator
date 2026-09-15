@@ -3,9 +3,14 @@ import test from "node:test";
 import {
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
-  dealOwnerAtCutoff,
+  companyCsmOwnerId,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
+
+test("assigns ownership from the company CSM owner field, not the deal owner field", () => {
+  assert.equal(companyCsmOwnerId({ csm_owner: " 1314508841 ", hubspot_owner_id: "84747686" }), "1314508841");
+  assert.equal(companyCsmOwnerId({ hubspot_owner_id: "84747686" }), "");
+});
 
 test("builds the prior and selected quarter-end comparison window", () => {
   assert.deepEqual(accountManagementQuarterWindow("2027-Q2"), {
@@ -24,35 +29,6 @@ test("builds the prior and selected quarter-end comparison window", () => {
   assert.equal(accountManagementQuarterWindow("2027-Q1").previousQuarterEnd, "2026-03-31");
   assert.equal(accountManagementQuarterWindow("2027-Q4").currentQuarterEnd, "2027-03-31");
   assert.throws(() => accountManagementQuarterWindow("2026-Q5"), /Invalid quarter/);
-});
-
-test("resolves the deal owner that was active at the prior quarter-end", () => {
-  const resolved = dealOwnerAtCutoff({
-    cutoffIso: "2026-06-30T23:59:59.999Z",
-    currentOwnerId: "new-owner",
-    currentOwnerAssignedAt: "2026-09-12T10:00:00.000Z",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    history: [
-      { value: "new-owner", timestamp: "2026-09-12T10:00:00.000Z" },
-      { value: "prior-owner", timestamp: "2026-04-15T10:00:00.000Z" },
-      { value: "first-owner", timestamp: "2026-01-01T00:00:00.000Z" },
-    ],
-  });
-
-  assert.equal(resolved.ownerId, "prior-owner");
-  assert.equal(resolved.source, "history");
-});
-
-test("does not put a deal created after the snapshot into the prior-quarter portfolio", () => {
-  const resolved = dealOwnerAtCutoff({
-    cutoffIso: "2026-06-30T23:59:59.999Z",
-    currentOwnerId: "owner-1",
-    currentOwnerAssignedAt: "2026-08-17T12:00:00.000Z",
-    createdAt: "2026-08-17T12:00:00.000Z",
-  });
-
-  assert.equal(resolved.ownerId, "");
-  assert.equal(resolved.source, "not_created");
 });
 
 test("calculates NRR from only accounts with prior-quarter ARR", () => {

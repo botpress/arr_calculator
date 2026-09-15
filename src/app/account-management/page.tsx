@@ -224,7 +224,7 @@ function OwnerSection({
               ))
             ) : (
               <tr>
-                <td colSpan={7}>No Existing Business portfolio accounts were assigned to this manager at the snapshot.</td>
+                <td colSpan={7}>No Existing Business portfolio accounts currently have this company CSM owner.</td>
               </tr>
             )}
           </tbody>
@@ -289,7 +289,7 @@ export default function AccountManagementPage() {
           <div>
             <h1 className="stripe-ui__title">Account Management</h1>
             <p className="stripe-ui__subtitle">
-              Quarterly NRR for Chloé, Sam, and Kieran, using their prior-quarter Existing Business portfolio and the HubSpot CARR calculation.
+              Quarterly NRR for Chloé, Sam, and Kieran, assigning accounts from the current CSM owner field on each HubSpot company.
             </p>
           </div>
         </div>
@@ -298,7 +298,7 @@ export default function AccountManagementPage() {
       <section className="stripe-ui__panel ui-reveal ui-reveal-1">
         <h2 className="stripe-ui__panel-title">Report quarter</h2>
         <p className="stripe-ui__panel-subtitle">
-          The portfolio is frozen at the end of the prior quarter. NRR compares that cohort&apos;s prior and selected quarter-end CARR.
+          The NRR cohort is frozen at the end of the prior quarter. Accounts are grouped by their current HubSpot company CSM owner.
           Botpress fiscal-quarter labels are used: Q1 Apr–Jun, Q2 Jul–Sep, Q3 Oct–Dec, and Q4 Jan–Mar.
         </p>
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
@@ -316,7 +316,7 @@ export default function AccountManagementPage() {
             </select>
           </div>
           <div className="stripe-ui__field" style={{ minWidth: 220 }}>
-            <label className="stripe-ui__field-label" htmlFor="account-management-owner">Deal owner</label>
+            <label className="stripe-ui__field-label" htmlFor="account-management-owner">CSM owner</label>
             <select
               id="account-management-owner"
               className="stripe-ui__control"
@@ -351,7 +351,7 @@ export default function AccountManagementPage() {
       {loading ? (
         <section className="stripe-ui__panel ui-reveal ui-reveal-2">
           <h2 className="stripe-ui__panel-title">Calculating account NRR</h2>
-          <p className="stripe-ui__panel-subtitle">Loading Existing Business ownership history and quarter-end HubSpot CARR.</p>
+          <p className="stripe-ui__panel-subtitle">Loading company CSM owners and quarter-end HubSpot CARR.</p>
           <div className="stripe-ui__skeleton-grid" aria-label="Loading Account Management report">
             <div className="stripe-ui__skeleton-row" />
             <div className="stripe-ui__skeleton-row" />
@@ -385,7 +385,7 @@ export default function AccountManagementPage() {
                 <div className="stripe-ui__eyebrow">Account Management team retention</div>
                 <h2 className="stripe-ui__panel-title">{data.quarterLabel} · Chloé, Sam &amp; Kieran</h2>
                 <p className="stripe-ui__panel-subtitle">
-                  Owner snapshot: {data.ownerSnapshotDate} · {data.team.baselineAccountCount} starting account{data.team.baselineAccountCount === 1 ? "" : "s"}
+                  Current company CSM owner · {data.team.baselineAccountCount} starting account{data.team.baselineAccountCount === 1 ? "" : "s"}
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--team">
@@ -407,7 +407,7 @@ export default function AccountManagementPage() {
                 <div className="stripe-ui__eyebrow">Coverage outside the AM team</div>
                 <h2 className="stripe-ui__panel-title">Companies outside Chloé, Sam &amp; Kieran</h2>
                 <p className="stripe-ui__panel-subtitle">
-                  {data.outsideTeam.baselineAccountCount} compan{data.outsideTeam.baselineAccountCount === 1 ? "y" : "ies"} in company-wide NRR but not in the three-manager cohort · owner snapshot {data.ownerSnapshotDate}
+                  {data.outsideTeam.baselineAccountCount} compan{data.outsideTeam.baselineAccountCount === 1 ? "y" : "ies"} in company-wide NRR but not currently assigned to the three CSMs
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--outside">
@@ -421,7 +421,7 @@ export default function AccountManagementPage() {
                 <thead>
                   <tr>
                     <th>Company</th>
-                    <th>Deal owner at snapshot</th>
+                    <th>Current company CSM owner</th>
                     <th>Deal(s)</th>
                     <th>{data.previousQuarterLabel} CARR</th>
                     <th>{data.currentQuarterLabel} CARR</th>
@@ -441,7 +441,7 @@ export default function AccountManagementPage() {
                       </td>
                       <td>
                         <strong>{account.ownerName}</strong>
-                        <div className="account-management__muted">{account.ownerId ? `Owner ${account.ownerId}` : "No owner at snapshot"}</div>
+                        <div className="account-management__muted">{account.ownerId ? `Owner ${account.ownerId}` : "No CSM owner on company"}</div>
                       </td>
                       <td>
                         <div className="account-management__deals">

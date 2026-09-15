@@ -2,18 +2,16 @@ import {
   ACCOUNT_MANAGER_CONFIGS,
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
-  dealOwnerAtCutoff,
+  companyCsmOwnerId,
   retentionMovement,
   type RetentionMetrics,
   type RetentionMovement,
 } from "@/lib/accountManagementRules";
 import {
   batchReadCompanies,
-  batchReadDealPropertyHistory,
   fetchCompanyIdsForDeals,
   fetchDealsByDealType,
   fetchHubspotOwnersById,
-  type HubspotDealWithPropertyHistory,
   type HubspotOwner,
 } from "@/lib/hubspot";
 import { FX_TARGET_CURRENCY, round2 } from "@/lib/logic";
@@ -60,7 +58,6 @@ export type AccountManagementReportResponse = {
   periodStartDate: string;
   periodEndDate: string;
   comparisonStartDate: string;
-  ownerSnapshotDate: string;
   targetCurrency: string;
   generatedAt: string;
   allHubspot: RetentionMetrics;
@@ -80,9 +77,6 @@ export type AccountManagementReportResponse = {
 
 type PortfolioCandidate = {
   companyId: string;
-  ownerId: string;
-  ownerAssignedAt: string;
-  createdAt: string;
   dealId: string;
   dealName: string;
 };
@@ -105,21 +99,6 @@ function firstNumericId(value: unknown) {
       .map((part) => part.trim())
       .find((part) => /^\d+$/.test(part)) || ""
   );
-}
-
-function timestampMs(value: unknown) {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function winningOwnerCandidates(candidates: PortfolioCandidate[]) {
-  const sorted = candidates.slice().sort((a, b) => {
-    const effectiveA = timestampMs(a.ownerAssignedAt) || timestampMs(a.createdAt);
-    const effectiveB = timestampMs(b.ownerAssignedAt) || timestampMs(b.createdAt);
-    return effectiveB - effectiveA || b.dealId.localeCompare(a.dealId, undefined, { numeric: true });
-  });
-  const winningOwnerId = sorted[0]?.ownerId || "";
-  return sorted.filter((candidate) => candidate.ownerId === winningOwnerId);
 }
 
 function ownerDisplayName(owner: HubspotOwner | undefined, ownerId: string) {
@@ -154,7 +133,7 @@ export async function generateAccountManagementReport(
 
   const [portfolioDeals, carrReport] = await Promise.all([
     fetchDealsByDealType(
-      ["dealname", "dealtype", "hubspot_owner_id", "hubspot_owner_assigneddate", "createdate"],
+      ["dealname", "dealtype"],
       "existingbusiness",
     ),
     generateReport({
@@ -165,19 +144,6 @@ export async function generateAccountManagementReport(
       contractedIncludeAllDeals: true,
     }),
   ]);
-
-  let historyByDealId = new Map<string, HubspotDealWithPropertyHistory>();
-  try {
-    const reportDealIds = carrReport.rows.map((row) => String(row.dealId || "").trim()).filter(Boolean);
-    historyByDealId = await batchReadDealPropertyHistory(
-      [...portfolioDeals.map((deal) => String(deal.id || "")), ...reportDealIds],
-      ["hubspot_owner_id", "hubspot_owner_assigneddate", "createdate", "dealname"],
-    );
-  } catch {
-    warnings.add(
-      "HubSpot owner history was unavailable, so unchanged owners assigned before the snapshot date were used where possible.",
-    );
-  }
 
   const portfolioCompanyPairs = await fetchCompanyIdsForDeals(
     portfolioDeals.map((deal) => String(deal.id || "")),
@@ -191,16 +157,6 @@ export async function generateAccountManagementReport(
   for (const deal of portfolioDeals) {
     const dealId = String(deal.id || "").trim();
     if (!dealId) continue;
-    const historyDeal = historyByDealId.get(dealId);
-    const ownerAtSnapshot = dealOwnerAtCutoff({
-      history: historyDeal?.propertiesWithHistory?.hubspot_owner_id,
-      cutoffIso: window.ownerCutoffIso,
-      currentOwnerId: currentProperty(deal, "hubspot_owner_id"),
-      currentOwnerAssignedAt: currentProperty(deal, "hubspot_owner_assigneddate"),
-      createdAt: currentProperty(deal, "createdate"),
-    });
-    if (ownerAtSnapshot.source === "not_created") continue;
-
     const companyIds = companyIdsByPortfolioDeal.get(dealId) || [];
     const companyId = companyIds[0] || "";
     if (!companyId) {
@@ -211,9 +167,6 @@ export async function generateAccountManagementReport(
     if (!candidatesByCompany.has(companyId)) candidatesByCompany.set(companyId, []);
     candidatesByCompany.get(companyId)!.push({
       companyId,
-      ownerId: ownerAtSnapshot.ownerId,
-      ownerAssignedAt: ownerAtSnapshot.assignedAt,
-      createdAt: currentProperty(deal, "createdate"),
       dealId,
       dealName: currentProperty(deal, "dealname") || `Deal ${dealId}`,
     });
@@ -222,19 +175,6 @@ export async function generateAccountManagementReport(
   if (missingPortfolioCompanyCount) {
     warnings.add(
       `${missingPortfolioCompanyCount} Existing Business deal${missingPortfolioCompanyCount === 1 ? " was" : "s were"} excluded because no HubSpot company was associated.`,
-    );
-  }
-
-  const winningCandidatesByCompany = new Map<string, PortfolioCandidate[]>();
-  let conflictingOwnerCount = 0;
-  for (const [companyId, candidates] of candidatesByCompany.entries()) {
-    if (new Set(candidates.map((candidate) => candidate.ownerId)).size > 1) conflictingOwnerCount += 1;
-    winningCandidatesByCompany.set(companyId, winningOwnerCandidates(candidates));
-  }
-
-  if (conflictingOwnerCount) {
-    warnings.add(
-      `${conflictingOwnerCount} compan${conflictingOwnerCount === 1 ? "y had" : "ies had"} Existing Business deals assigned to multiple managers at the snapshot; the most recently assigned deal determined ownership.`,
     );
   }
 
@@ -293,47 +233,28 @@ export async function generateAccountManagementReport(
   const carrCandidatesByCompany = new Map<string, PortfolioCandidate[]>();
   for (const [companyId, dealIds] of carrDealIdsByCompany.entries()) {
     for (const dealId of dealIds) {
-      const deal = historyByDealId.get(dealId);
-      const properties = deal?.properties || {};
-      const ownerAtSnapshot = dealOwnerAtCutoff({
-        history: deal?.propertiesWithHistory?.hubspot_owner_id,
-        cutoffIso: window.ownerCutoffIso,
-        currentOwnerId: String(properties.hubspot_owner_id || "").trim(),
-        currentOwnerAssignedAt: String(properties.hubspot_owner_assigneddate || "").trim(),
-        createdAt: String(properties.createdate || deal?.createdAt || "").trim(),
-      });
-      if (ownerAtSnapshot.source === "not_created") continue;
       if (!carrCandidatesByCompany.has(companyId)) carrCandidatesByCompany.set(companyId, []);
       carrCandidatesByCompany.get(companyId)!.push({
         companyId,
-        ownerId: ownerAtSnapshot.ownerId,
-        ownerAssignedAt: ownerAtSnapshot.assignedAt,
-        createdAt: String(properties.createdate || deal?.createdAt || "").trim(),
         dealId,
-        dealName: String(properties.dealname || "").trim() || carrDealNameById.get(dealId) || `Deal ${dealId}`,
+        dealName: carrDealNameById.get(dealId) || `Deal ${dealId}`,
       });
     }
   }
-  const winningCarrCandidatesByCompany = new Map(
-    Array.from(carrCandidatesByCompany.entries()).map(([companyId, candidates]) => [
-      companyId,
-      winningOwnerCandidates(candidates),
-    ]),
-  );
 
   const companyIdsToRead = Array.from(new Set([
-    ...winningCandidatesByCompany.keys(),
+    ...candidatesByCompany.keys(),
     ...carrByCompany.keys(),
   ]));
   const companiesById = companyIdsToRead.length
-    ? await batchReadCompanies(companyIdsToRead, ["name"])
+    ? await batchReadCompanies(companyIdsToRead, ["name", "csm_owner"])
     : new Map();
   const accountsByOwnerId = new Map<string, AccountManagementAccountRow[]>(
     ACCOUNT_MANAGER_CONFIGS.map((owner) => [owner.ownerId, []]),
   );
 
-  for (const [companyId, candidates] of winningCandidatesByCompany.entries()) {
-    const ownerId = candidates[0]?.ownerId || "";
+  for (const [companyId, candidates] of candidatesByCompany.entries()) {
+    const ownerId = companyCsmOwnerId(companiesById.get(companyId)?.properties);
     if (!accountsByOwnerId.has(ownerId)) continue;
     const carr = carrByCompany.get(companyId) || { companyName: "", previousArr: 0, currentArr: 0 };
     const companyName =
@@ -380,8 +301,9 @@ export async function generateAccountManagementReport(
   const outsideDrafts = Array.from(carrByCompany.entries())
     .filter(([companyId, carr]) => carr.previousArr > 0 && !teamCompanyIds.has(companyId))
     .map(([companyId, carr]) => {
-      const candidates = winningCandidatesByCompany.get(companyId) || winningCarrCandidatesByCompany.get(companyId) || [];
-      return { companyId, carr, candidates, ownerId: candidates[0]?.ownerId || "" };
+      const candidates = candidatesByCompany.get(companyId) || carrCandidatesByCompany.get(companyId) || [];
+      const ownerId = companyCsmOwnerId(companiesById.get(companyId)?.properties);
+      return { companyId, carr, candidates, ownerId };
     });
   let hubspotOwnersById = new Map<string, HubspotOwner>();
   try {
@@ -426,7 +348,6 @@ export async function generateAccountManagementReport(
     periodStartDate: window.currentQuarterStart,
     periodEndDate: window.currentQuarterEnd,
     comparisonStartDate: window.previousQuarterEnd,
-    ownerSnapshotDate: window.previousQuarterEnd,
     targetCurrency: FX_TARGET_CURRENCY,
     generatedAt: new Date().toISOString(),
     allHubspot,
@@ -442,8 +363,8 @@ export async function generateAccountManagementReport(
       allHubspotCohort:
         "Company-wide NRR includes every company with prior-quarter-end CARR across all deals in the HubSpot CARR report, regardless of deal owner. It is separate from the three-person Account Management team cohort.",
       outsideTeamCohort:
-        `The outside-team table is the company-wide prior-quarter NRR cohort minus companies assigned to Chloé, Sam, or Kieran on ${window.previousQuarterEnd}. Deal owners use Existing Business ownership first, then the company's CARR-producing deal ownership when no Existing Business deal is available.`,
-      ownerCohort: `Each company is assigned to Chloé, Sam, or Kieran using Existing Business deal-owner history as of ${window.previousQuarterEnd}. If a company has conflicting managers, the most recently assigned deal wins.`,
+        "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
+      ownerCohort: "Each company is assigned using the current value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",
       carrCalculation:
         "Previous and current ARR use the HubSpot CARR report's contracted-ARR engine: recurring line items are annualized, converted using close-month FX, and included when their contract window covers the month end.",
       nrrFormula:

@@ -4,11 +4,6 @@ export type AccountManagerConfig = {
   ownerName: string;
 };
 
-export type HubspotOwnerHistoryEntry = {
-  value?: string;
-  timestamp?: string;
-};
-
 export type RetentionAccountInput = {
   previousArr: number;
   currentArr: number;
@@ -27,6 +22,10 @@ export type RetentionMetrics = {
   churnArr: number;
   nrrPct: number | null;
 };
+
+export function companyCsmOwnerId(properties: Record<string, unknown> | null | undefined) {
+  return String(properties?.csm_owner || "").trim();
+}
 
 function ownerIdFromEnv(name: string, fallback: string) {
   return String(process.env[name] || fallback).trim() || fallback;
@@ -88,56 +87,6 @@ export function accountManagementQuarterWindow(quarter: string) {
     currentQuarterEnd: isoDate(currentEnd),
     ownerCutoffIso: `${isoDate(previousEnd)}T23:59:59.999Z`,
   };
-}
-
-function validTimestamp(value: unknown) {
-  const timestamp = Date.parse(String(value || ""));
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-export function dealOwnerAtCutoff(input: {
-  history?: HubspotOwnerHistoryEntry[];
-  cutoffIso: string;
-  currentOwnerId?: string;
-  currentOwnerAssignedAt?: string;
-  createdAt?: string;
-}) {
-  const cutoffMs = validTimestamp(input.cutoffIso);
-  if (cutoffMs == null) throw new Error("Invalid owner cutoff timestamp");
-
-  const history = (input.history || [])
-    .map((entry) => ({
-      ownerId: String(entry.value || "").trim(),
-      timestamp: String(entry.timestamp || "").trim(),
-      timestampMs: validTimestamp(entry.timestamp),
-    }))
-    .filter((entry): entry is { ownerId: string; timestamp: string; timestampMs: number } => entry.timestampMs != null)
-    .filter((entry) => entry.timestampMs <= cutoffMs)
-    .sort((a, b) => b.timestampMs - a.timestampMs);
-
-  if (history.length) {
-    return {
-      ownerId: history[0].ownerId,
-      assignedAt: history[0].timestamp,
-      source: "history" as const,
-    };
-  }
-
-  const createdAtMs = validTimestamp(input.createdAt);
-  if (createdAtMs != null && createdAtMs > cutoffMs) {
-    return { ownerId: "", assignedAt: "", source: "not_created" as const };
-  }
-
-  const assignedAtMs = validTimestamp(input.currentOwnerAssignedAt);
-  if (assignedAtMs != null && assignedAtMs <= cutoffMs) {
-    return {
-      ownerId: String(input.currentOwnerId || "").trim(),
-      assignedAt: String(input.currentOwnerAssignedAt || "").trim(),
-      source: "current_fallback" as const,
-    };
-  }
-
-  return { ownerId: "", assignedAt: "", source: "unresolved" as const };
 }
 
 export function retentionMovement(previousArr: number, currentArr: number): RetentionMovement {
