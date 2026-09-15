@@ -9,17 +9,28 @@ import type {
 
 function currentQuarter() {
   const now = new Date();
-  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+  const fiscalYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear();
+  const fiscalQuarter = Math.floor(((now.getMonth() + 9) % 12) / 3) + 1;
+  return `${fiscalYear}-Q${fiscalQuarter}`;
 }
 
 function quarterLabel(quarter: string) {
   const [year, quarterNumber] = quarter.split("-");
-  return `${quarterNumber} ${year}`;
+  return `FY${year.slice(-2)} ${quarterNumber}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T12:00:00.000Z`));
 }
 
 function recentQuarterOptions(count = 28) {
-  const now = new Date();
-  const currentQuarterIndex = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
+  const [currentFiscalYear, currentQuarterNumber] = currentQuarter().split("-Q").map(Number);
+  const currentQuarterIndex = currentFiscalYear * 4 + currentQuarterNumber - 1;
   return Array.from({ length: count }, (_, offset) => {
     const absoluteQuarter = currentQuarterIndex - offset;
     const year = Math.floor(absoluteQuarter / 4);
@@ -288,6 +299,7 @@ export default function AccountManagementPage() {
         <h2 className="stripe-ui__panel-title">Report quarter</h2>
         <p className="stripe-ui__panel-subtitle">
           The portfolio is frozen at the end of the prior quarter. NRR compares that cohort&apos;s prior and selected quarter-end CARR.
+          Botpress fiscal-quarter labels are used: Q1 Apr–Jun, Q2 Jul–Sep, Q3 Oct–Dec, and Q4 Jan–Mar.
         </p>
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <div className="stripe-ui__field" style={{ minWidth: 220 }}>
@@ -327,6 +339,12 @@ export default function AccountManagementPage() {
             {loading ? "Calculating…" : "Load NRR"}
           </button>
         </div>
+        {data?.quarter === quarter ? (
+          <p className="stripe-ui__panel-subtitle" style={{ marginTop: 12 }}>
+            <strong>{data.quarterLabel} period:</strong> {formatDate(data.periodStartDate)}–{formatDate(data.periodEndDate)}.
+            {" "}<strong>NRR comparison:</strong> {formatDate(data.comparisonStartDate)} versus {formatDate(data.periodEndDate)}.
+          </p>
+        ) : null}
         {error ? <p className="stripe-ui__error">{error}</p> : null}
       </section>
 

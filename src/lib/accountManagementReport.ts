@@ -57,6 +57,9 @@ export type AccountManagementReportResponse = {
   previousQuarterLabel: string;
   currentQuarterKey: string;
   currentQuarterLabel: string;
+  periodStartDate: string;
+  periodEndDate: string;
+  comparisonStartDate: string;
   ownerSnapshotDate: string;
   targetCurrency: string;
   generatedAt: string;
@@ -92,7 +95,7 @@ type CompanyCarr = {
 
 function quarterLabel(quarterKey: string) {
   const [year, quarter] = quarterKey.split("-");
-  return `${quarter} ${year}`;
+  return `FY${year.slice(-2)} ${quarter}`;
 }
 
 function firstNumericId(value: unknown) {
@@ -420,6 +423,9 @@ export async function generateAccountManagementReport(
     previousQuarterLabel: quarterLabel(window.previousQuarterKey),
     currentQuarterKey: window.currentQuarterKey,
     currentQuarterLabel: quarterLabel(window.currentQuarterKey),
+    periodStartDate: window.currentQuarterStart,
+    periodEndDate: window.currentQuarterEnd,
+    comparisonStartDate: window.previousQuarterEnd,
     ownerSnapshotDate: window.previousQuarterEnd,
     targetCurrency: FX_TARGET_CURRENCY,
     generatedAt: new Date().toISOString(),

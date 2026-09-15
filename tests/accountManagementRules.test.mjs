@@ -8,19 +8,21 @@ import {
 } from "../src/lib/accountManagementRules.ts";
 
 test("builds the prior and selected quarter-end comparison window", () => {
-  assert.deepEqual(accountManagementQuarterWindow("2026-Q3"), {
-    quarter: "2026-Q3",
-    previousQuarterKey: "2026-Q2",
-    currentQuarterKey: "2026-Q3",
+  assert.deepEqual(accountManagementQuarterWindow("2027-Q2"), {
+    quarter: "2027-Q2",
+    previousQuarterKey: "2027-Q1",
+    currentQuarterKey: "2027-Q2",
     previousPeriodMonthKey: "2026-06",
     currentPeriodMonthKey: "2026-09",
+    currentQuarterStart: "2026-07-01",
     previousQuarterEnd: "2026-06-30",
     currentQuarterEnd: "2026-09-30",
     ownerCutoffIso: "2026-06-30T23:59:59.999Z",
   });
 
-  assert.equal(accountManagementQuarterWindow("2026-Q1").previousQuarterEnd, "2025-12-31");
-  assert.equal(accountManagementQuarterWindow("2028-Q2").currentQuarterEnd, "2028-06-30");
+  assert.equal(accountManagementQuarterWindow("2027-Q1").currentQuarterStart, "2026-04-01");
+  assert.equal(accountManagementQuarterWindow("2027-Q1").previousQuarterEnd, "2026-03-31");
+  assert.equal(accountManagementQuarterWindow("2027-Q4").currentQuarterEnd, "2027-03-31");
   assert.throws(() => accountManagementQuarterWindow("2026-Q5"), /Invalid quarter/);
 });
 

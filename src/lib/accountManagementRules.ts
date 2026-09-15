@@ -58,23 +58,32 @@ function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function fiscalQuarterKeyForDate(date: Date) {
+  const calendarMonth = date.getUTCMonth();
+  const fiscalYear = calendarMonth >= 3 ? date.getUTCFullYear() + 1 : date.getUTCFullYear();
+  const fiscalQuarter = Math.floor(((calendarMonth + 9) % 12) / 3) + 1;
+  return `${fiscalYear}-Q${fiscalQuarter}`;
+}
+
 export function accountManagementQuarterWindow(quarter: string) {
   const match = /^(\d{4})-Q([1-4])$/.exec(String(quarter || "").trim().toUpperCase());
-  if (!match) throw new Error("Invalid quarter; expected YYYY-Q1 through YYYY-Q4");
-  const year = Number(match[1]);
+  if (!match) throw new Error("Invalid quarter; expected fiscal year-end YYYY-Q1 through YYYY-Q4");
+  const fiscalYear = Number(match[1]);
   const quarterIndex = Number(match[2]) - 1;
-  const currentStartMonth = quarterIndex * 3;
+  const fiscalStartYear = fiscalYear - 1;
+  const currentStartMonth = 3 + quarterIndex * 3;
 
-  const currentEnd = new Date(Date.UTC(year, currentStartMonth + 3, 0));
-  const previousEnd = new Date(Date.UTC(year, currentStartMonth, 0));
-  const previousQuarterIndex = Math.floor(previousEnd.getUTCMonth() / 3);
+  const currentStart = new Date(Date.UTC(fiscalStartYear, currentStartMonth, 1));
+  const currentEnd = new Date(Date.UTC(fiscalStartYear, currentStartMonth + 3, 0));
+  const previousEnd = new Date(Date.UTC(fiscalStartYear, currentStartMonth, 0));
 
   return {
-    quarter: `${year}-Q${quarterIndex + 1}`,
-    previousQuarterKey: `${previousEnd.getUTCFullYear()}-Q${previousQuarterIndex + 1}`,
-    currentQuarterKey: `${year}-Q${quarterIndex + 1}`,
+    quarter: `${fiscalYear}-Q${quarterIndex + 1}`,
+    previousQuarterKey: fiscalQuarterKeyForDate(previousEnd),
+    currentQuarterKey: `${fiscalYear}-Q${quarterIndex + 1}`,
     previousPeriodMonthKey: isoDate(previousEnd).slice(0, 7),
     currentPeriodMonthKey: isoDate(currentEnd).slice(0, 7),
+    currentQuarterStart: isoDate(currentStart),
     previousQuarterEnd: isoDate(previousEnd),
     currentQuarterEnd: isoDate(currentEnd),
     ownerCutoffIso: `${isoDate(previousEnd)}T23:59:59.999Z`,
