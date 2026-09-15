@@ -92,7 +92,6 @@ export default function AppNavigation() {
           items: [
             { href: "/ai-spend", label: "AI spend" },
             { href: "/quickbooks", label: "QuickBooks" },
-            { href: "/diff-sheet", label: "Diff sheet" },
             { href: "/account-management", label: "Account management" },
             { href: "/migration", label: "Pricing migration" },
             { href: "/scorecards", label: "Team scorecards" },
@@ -116,7 +115,6 @@ export default function AppNavigation() {
         label: "Admin",
         items: [
           { href: "/model-update", label: "Model update" },
-          { href: "/lease-prediction", label: "Lease prediction" },
           { href: "/access-control", label: "Access control" },
         ],
       });

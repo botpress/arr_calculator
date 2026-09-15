@@ -37,8 +37,8 @@ const PUBLIC_API_PATH_PREFIXES = [
   "/api/customer-monthly-history-sync",
   "/api/billing/monthly-draft-invoices",
 ];
-const ADMIN_PAGE_PATH_PREFIXES = ["/model-update", "/lease-prediction"];
-const ADMIN_API_PATH_PREFIXES = ["/api/model-update", "/api/lease-prediction"];
+const ADMIN_PAGE_PATH_PREFIXES = ["/model-update"];
+const ADMIN_API_PATH_PREFIXES = ["/api/model-update"];
 const COMMISSIONS_PAGE_PATH_PREFIXES = ["/commissions"];
 const COMMISSIONS_API_PATH_PREFIXES = ["/api/commissions"];
 const GTM_PAGE_PATH_PREFIXES = ["/gtm"];
