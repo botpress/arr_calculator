@@ -58,24 +58,25 @@ function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-export function accountManagementMonthWindow(month: string) {
-  const match = /^(\d{4})-(\d{2})$/.exec(String(month || "").trim());
-  if (!match) throw new Error("Invalid month; expected YYYY-MM");
+export function accountManagementQuarterWindow(quarter: string) {
+  const match = /^(\d{4})-Q([1-4])$/.exec(String(quarter || "").trim().toUpperCase());
+  if (!match) throw new Error("Invalid quarter; expected YYYY-Q1 through YYYY-Q4");
   const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-  if (monthIndex < 0 || monthIndex > 11) throw new Error("Invalid month; expected YYYY-MM");
+  const quarterIndex = Number(match[2]) - 1;
+  const currentStartMonth = quarterIndex * 3;
 
-  const currentStart = new Date(Date.UTC(year, monthIndex, 1));
-  const currentEnd = new Date(Date.UTC(year, monthIndex + 1, 0));
-  const previousEnd = new Date(Date.UTC(year, monthIndex, 0));
-  const previousStart = new Date(Date.UTC(previousEnd.getUTCFullYear(), previousEnd.getUTCMonth(), 1));
+  const currentEnd = new Date(Date.UTC(year, currentStartMonth + 3, 0));
+  const previousEnd = new Date(Date.UTC(year, currentStartMonth, 0));
+  const previousQuarterIndex = Math.floor(previousEnd.getUTCMonth() / 3);
 
   return {
-    month: `${year}-${String(monthIndex + 1).padStart(2, "0")}`,
-    previousMonthKey: isoDate(previousStart).slice(0, 7),
-    currentMonthKey: isoDate(currentStart).slice(0, 7),
-    previousMonthEnd: isoDate(previousEnd),
-    currentMonthEnd: isoDate(currentEnd),
+    quarter: `${year}-Q${quarterIndex + 1}`,
+    previousQuarterKey: `${previousEnd.getUTCFullYear()}-Q${previousQuarterIndex + 1}`,
+    currentQuarterKey: `${year}-Q${quarterIndex + 1}`,
+    previousPeriodMonthKey: isoDate(previousEnd).slice(0, 7),
+    currentPeriodMonthKey: isoDate(currentEnd).slice(0, 7),
+    previousQuarterEnd: isoDate(previousEnd),
+    currentQuarterEnd: isoDate(currentEnd),
     ownerCutoffIso: `${isoDate(previousEnd)}T23:59:59.999Z`,
   };
 }

@@ -7,9 +7,26 @@ import type {
   AccountManagementReportResponse,
 } from "@/lib/accountManagementReport";
 
-function currentMonth() {
+function currentQuarter() {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
+}
+
+function quarterLabel(quarter: string) {
+  const [year, quarterNumber] = quarter.split("-");
+  return `${quarterNumber} ${year}`;
+}
+
+function recentQuarterOptions(count = 28) {
+  const now = new Date();
+  const currentQuarterIndex = now.getFullYear() * 4 + Math.floor(now.getMonth() / 3);
+  return Array.from({ length: count }, (_, offset) => {
+    const absoluteQuarter = currentQuarterIndex - offset;
+    const year = Math.floor(absoluteQuarter / 4);
+    const quarterNumber = (absoluteQuarter % 4) + 1;
+    const value = `${year}-Q${quarterNumber}`;
+    return { value, label: quarterLabel(value) };
+  });
 }
 
 function formatMoney(value: number, currency: string) {
@@ -123,11 +140,11 @@ function OwnerSection({
 
       <div className="stripe-ui__stats account-management__stats">
         <article className="stripe-ui__stat">
-          <p className="stripe-ui__stat-label">{data.previousMonthLabel} CARR</p>
+          <p className="stripe-ui__stat-label">{data.previousQuarterLabel} CARR</p>
           <p className="stripe-ui__stat-value">{formatMoney(owner.previousArr, data.targetCurrency)}</p>
         </article>
         <article className="stripe-ui__stat">
-          <p className="stripe-ui__stat-label">{data.currentMonthLabel} CARR</p>
+          <p className="stripe-ui__stat-label">{data.currentQuarterLabel} CARR</p>
           <p className="stripe-ui__stat-value">{formatMoney(owner.currentArr, data.targetCurrency)}</p>
         </article>
         <article className="stripe-ui__stat">
@@ -154,8 +171,8 @@ function OwnerSection({
             <tr>
               <th>Company</th>
               <th>Existing Business deal(s)</th>
-              <th>{data.previousMonthLabel} CARR</th>
-              <th>{data.currentMonthLabel} CARR</th>
+              <th>{data.previousQuarterLabel} CARR</th>
+              <th>{data.currentQuarterLabel} CARR</th>
               <th>Change</th>
               <th>Account NRR</th>
               <th>Movement</th>
@@ -207,8 +224,9 @@ function OwnerSection({
 }
 
 export default function AccountManagementPage() {
-  const initialMonth = useMemo(currentMonth, []);
-  const [month, setMonth] = useState(initialMonth);
+  const initialQuarter = useMemo(currentQuarter, []);
+  const quarterOptions = useMemo(() => recentQuarterOptions(), []);
+  const [quarter, setQuarter] = useState(initialQuarter);
   const [ownerFilter, setOwnerFilter] = useState("");
   const [data, setData] = useState<AccountManagementReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -222,7 +240,7 @@ export default function AccountManagementPage() {
       const response = await fetch("/api/account-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month }),
+        body: JSON.stringify({ quarter }),
       });
       const text = await response.text();
       const payload = text
@@ -238,7 +256,7 @@ export default function AccountManagementPage() {
     } finally {
       setLoading(false);
     }
-  }, [month]);
+  }, [quarter]);
 
   useEffect(() => {
     if (autoRunDone.current) return;
@@ -260,27 +278,30 @@ export default function AccountManagementPage() {
           <div>
             <h1 className="stripe-ui__title">Account Management</h1>
             <p className="stripe-ui__subtitle">
-              Monthly NRR for Chloé, Sam, and Kieran, using their prior-month Existing Business portfolio and the HubSpot CARR calculation.
+              Quarterly NRR for Chloé, Sam, and Kieran, using their prior-quarter Existing Business portfolio and the HubSpot CARR calculation.
             </p>
           </div>
         </div>
       </section>
 
       <section className="stripe-ui__panel ui-reveal ui-reveal-1">
-        <h2 className="stripe-ui__panel-title">Report month</h2>
+        <h2 className="stripe-ui__panel-title">Report quarter</h2>
         <p className="stripe-ui__panel-subtitle">
-          The portfolio is frozen at the end of the prior month. NRR then compares that cohort&apos;s prior and selected month-end CARR.
+          The portfolio is frozen at the end of the prior quarter. NRR compares that cohort&apos;s prior and selected quarter-end CARR.
         </p>
         <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
           <div className="stripe-ui__field" style={{ minWidth: 220 }}>
-            <label className="stripe-ui__field-label" htmlFor="account-management-month">Month</label>
-            <input
-              id="account-management-month"
+            <label className="stripe-ui__field-label" htmlFor="account-management-quarter">Quarter</label>
+            <select
+              id="account-management-quarter"
               className="stripe-ui__control"
-              type="month"
-              value={month}
-              onChange={(event) => setMonth(event.target.value)}
-            />
+              value={quarter}
+              onChange={(event) => setQuarter(event.target.value)}
+            >
+              {quarterOptions.map((option) => (
+                <option value={option.value} key={option.value}>{option.label}</option>
+              ))}
+            </select>
           </div>
           <div className="stripe-ui__field" style={{ minWidth: 220 }}>
             <label className="stripe-ui__field-label" htmlFor="account-management-owner">Deal owner</label>
@@ -301,7 +322,7 @@ export default function AccountManagementPage() {
             className="stripe-ui__btn stripe-ui__btn--primary"
             type="button"
             onClick={() => void run()}
-            disabled={loading || !month}
+            disabled={loading || !quarter}
           >
             {loading ? "Calculating…" : "Load NRR"}
           </button>
@@ -312,7 +333,7 @@ export default function AccountManagementPage() {
       {loading ? (
         <section className="stripe-ui__panel ui-reveal ui-reveal-2">
           <h2 className="stripe-ui__panel-title">Calculating account NRR</h2>
-          <p className="stripe-ui__panel-subtitle">Loading Existing Business ownership history and month-end HubSpot CARR.</p>
+          <p className="stripe-ui__panel-subtitle">Loading Existing Business ownership history and quarter-end HubSpot CARR.</p>
           <div className="stripe-ui__skeleton-grid" aria-label="Loading Account Management report">
             <div className="stripe-ui__skeleton-row" />
             <div className="stripe-ui__skeleton-row" />
@@ -327,7 +348,7 @@ export default function AccountManagementPage() {
             <div className="account-management__owner-heading">
               <div>
                 <div className="stripe-ui__eyebrow">Company-wide retention</div>
-                <h2 className="stripe-ui__panel-title">{data.monthLabel} · All HubSpot deals</h2>
+                <h2 className="stripe-ui__panel-title">{data.quarterLabel} · All HubSpot deals</h2>
                 <p className="stripe-ui__panel-subtitle">
                   Every owner and company in the HubSpot CARR report · {data.allHubspot.baselineAccountCount} starting compan{data.allHubspot.baselineAccountCount === 1 ? "y" : "ies"}
                 </p>
@@ -344,7 +365,7 @@ export default function AccountManagementPage() {
             <div className="account-management__owner-heading">
               <div>
                 <div className="stripe-ui__eyebrow">Account Management team retention</div>
-                <h2 className="stripe-ui__panel-title">{data.monthLabel} · Chloé, Sam &amp; Kieran</h2>
+                <h2 className="stripe-ui__panel-title">{data.quarterLabel} · Chloé, Sam &amp; Kieran</h2>
                 <p className="stripe-ui__panel-subtitle">
                   Owner snapshot: {data.ownerSnapshotDate} · {data.team.baselineAccountCount} starting account{data.team.baselineAccountCount === 1 ? "" : "s"}
                 </p>
@@ -384,8 +405,8 @@ export default function AccountManagementPage() {
                     <th>Company</th>
                     <th>Deal owner at snapshot</th>
                     <th>Deal(s)</th>
-                    <th>{data.previousMonthLabel} CARR</th>
-                    <th>{data.currentMonthLabel} CARR</th>
+                    <th>{data.previousQuarterLabel} CARR</th>
+                    <th>{data.currentQuarterLabel} CARR</th>
                     <th>Change</th>
                     <th>Account NRR</th>
                     <th>Movement</th>

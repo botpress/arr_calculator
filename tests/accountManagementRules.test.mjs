@@ -1,29 +1,32 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  accountManagementMonthWindow,
+  accountManagementQuarterWindow,
   calculateRetentionMetrics,
   dealOwnerAtCutoff,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
 
-test("builds the prior and selected month-end comparison window", () => {
-  assert.deepEqual(accountManagementMonthWindow("2026-09"), {
-    month: "2026-09",
-    previousMonthKey: "2026-08",
-    currentMonthKey: "2026-09",
-    previousMonthEnd: "2026-08-31",
-    currentMonthEnd: "2026-09-30",
-    ownerCutoffIso: "2026-08-31T23:59:59.999Z",
+test("builds the prior and selected quarter-end comparison window", () => {
+  assert.deepEqual(accountManagementQuarterWindow("2026-Q3"), {
+    quarter: "2026-Q3",
+    previousQuarterKey: "2026-Q2",
+    currentQuarterKey: "2026-Q3",
+    previousPeriodMonthKey: "2026-06",
+    currentPeriodMonthKey: "2026-09",
+    previousQuarterEnd: "2026-06-30",
+    currentQuarterEnd: "2026-09-30",
+    ownerCutoffIso: "2026-06-30T23:59:59.999Z",
   });
 
-  assert.equal(accountManagementMonthWindow("2028-03").previousMonthEnd, "2028-02-29");
-  assert.throws(() => accountManagementMonthWindow("2026-13"), /Invalid month/);
+  assert.equal(accountManagementQuarterWindow("2026-Q1").previousQuarterEnd, "2025-12-31");
+  assert.equal(accountManagementQuarterWindow("2028-Q2").currentQuarterEnd, "2028-06-30");
+  assert.throws(() => accountManagementQuarterWindow("2026-Q5"), /Invalid quarter/);
 });
 
-test("resolves the deal owner that was active at the prior month-end", () => {
+test("resolves the deal owner that was active at the prior quarter-end", () => {
   const resolved = dealOwnerAtCutoff({
-    cutoffIso: "2026-08-31T23:59:59.999Z",
+    cutoffIso: "2026-06-30T23:59:59.999Z",
     currentOwnerId: "new-owner",
     currentOwnerAssignedAt: "2026-09-12T10:00:00.000Z",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -38,9 +41,9 @@ test("resolves the deal owner that was active at the prior month-end", () => {
   assert.equal(resolved.source, "history");
 });
 
-test("does not put a deal created after the snapshot into the prior-month portfolio", () => {
+test("does not put a deal created after the snapshot into the prior-quarter portfolio", () => {
   const resolved = dealOwnerAtCutoff({
-    cutoffIso: "2026-07-31T23:59:59.999Z",
+    cutoffIso: "2026-06-30T23:59:59.999Z",
     currentOwnerId: "owner-1",
     currentOwnerAssignedAt: "2026-08-17T12:00:00.000Z",
     createdAt: "2026-08-17T12:00:00.000Z",
@@ -50,7 +53,7 @@ test("does not put a deal created after the snapshot into the prior-month portfo
   assert.equal(resolved.source, "not_created");
 });
 
-test("calculates NRR from only accounts with prior-month ARR", () => {
+test("calculates NRR from only accounts with prior-quarter ARR", () => {
   const metrics = calculateRetentionMetrics([
     { previousArr: 100, currentArr: 120 },
     { previousArr: 200, currentArr: 150 },

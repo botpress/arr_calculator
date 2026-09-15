@@ -1,6 +1,6 @@
 import {
   ACCOUNT_MANAGER_CONFIGS,
-  accountManagementMonthWindow,
+  accountManagementQuarterWindow,
   calculateRetentionMetrics,
   dealOwnerAtCutoff,
   retentionMovement,
@@ -21,7 +21,7 @@ import { generateReport } from "@/lib/report";
 import type { HubspotDeal, ReportRow } from "@/lib/types";
 
 export type AccountManagementReportRequest = {
-  month?: string;
+  quarter?: string;
 };
 
 export type AccountManagementAccountRow = {
@@ -51,12 +51,12 @@ export type AccountManagementOutsideTeamRow = AccountManagementAccountRow & {
 };
 
 export type AccountManagementReportResponse = {
-  month: string;
-  monthLabel: string;
-  previousMonthKey: string;
-  previousMonthLabel: string;
-  currentMonthKey: string;
-  currentMonthLabel: string;
+  quarter: string;
+  quarterLabel: string;
+  previousQuarterKey: string;
+  previousQuarterLabel: string;
+  currentQuarterKey: string;
+  currentQuarterLabel: string;
   ownerSnapshotDate: string;
   targetCurrency: string;
   generatedAt: string;
@@ -90,12 +90,9 @@ type CompanyCarr = {
   currentArr: number;
 };
 
-function monthLabel(monthKey: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${monthKey}-01T12:00:00.000Z`));
+function quarterLabel(quarterKey: string) {
+  const [year, quarter] = quarterKey.split("-");
+  return `${quarter} ${year}`;
 }
 
 function firstNumericId(value: unknown) {
@@ -139,16 +136,16 @@ function currentProperty(deal: HubspotDeal, name: string) {
   return String(deal.properties?.[name] || "").trim();
 }
 
-function addCarrValue(company: CompanyCarr, row: ReportRow, previousMonthKey: string, currentMonthKey: string) {
-  company.previousArr = round2(company.previousArr + Number(row.valuesByPeriod?.[previousMonthKey] || 0));
-  company.currentArr = round2(company.currentArr + Number(row.valuesByPeriod?.[currentMonthKey] || 0));
+function addCarrValue(company: CompanyCarr, row: ReportRow, previousPeriodMonthKey: string, currentPeriodMonthKey: string) {
+  company.previousArr = round2(company.previousArr + Number(row.valuesByPeriod?.[previousPeriodMonthKey] || 0));
+  company.currentArr = round2(company.currentArr + Number(row.valuesByPeriod?.[currentPeriodMonthKey] || 0));
   if (!company.companyName) company.companyName = String(row.accountName || "").trim();
 }
 
 export async function generateAccountManagementReport(
   request: AccountManagementReportRequest,
 ): Promise<AccountManagementReportResponse> {
-  const window = accountManagementMonthWindow(String(request.month || "").trim());
+  const window = accountManagementQuarterWindow(String(request.quarter || "").trim());
   const portalId = String(process.env.HUBSPOT_PORTAL_ID || "20692578").trim() || "20692578";
   const warnings = new Set<string>();
 
@@ -158,8 +155,8 @@ export async function generateAccountManagementReport(
       "existingbusiness",
     ),
     generateReport({
-      startDate: window.previousMonthEnd,
-      endDate: window.currentMonthEnd,
+      startDate: window.previousQuarterEnd,
+      endDate: window.currentQuarterEnd,
       mode: "contracted",
       grain: "monthly",
       contractedIncludeAllDeals: true,
@@ -262,8 +259,8 @@ export async function generateAccountManagementReport(
     const companyId = firstNumericId(row.accountId) || fallbackCompanyIdsByDeal.get(dealId)?.[0] || "";
     if (!companyId) {
       if (
-        Number(row.valuesByPeriod?.[window.previousMonthKey] || 0) !== 0 ||
-        Number(row.valuesByPeriod?.[window.currentMonthKey] || 0) !== 0
+        Number(row.valuesByPeriod?.[window.previousPeriodMonthKey] || 0) !== 0 ||
+        Number(row.valuesByPeriod?.[window.currentPeriodMonthKey] || 0) !== 0
       ) {
         unmappedCarrRowCount += 1;
       }
@@ -279,7 +276,7 @@ export async function generateAccountManagementReport(
         carrDealNameById.set(dealId, String(row.dealName || "").trim() || `Deal ${dealId}`);
       }
     }
-    addCarrValue(carrByCompany.get(companyId)!, row, window.previousMonthKey, window.currentMonthKey);
+    addCarrValue(carrByCompany.get(companyId)!, row, window.previousPeriodMonthKey, window.currentPeriodMonthKey);
   }
 
   if (unmappedCarrRowCount) {
@@ -372,7 +369,7 @@ export async function generateAccountManagementReport(
   const noBaselineCount = allAccounts.filter((account) => account.previousArr <= 0).length;
   if (noBaselineCount) {
     warnings.add(
-      `${noBaselineCount} portfolio account${noBaselineCount === 1 ? " has" : "s have"} no prior-month CARR and therefore does not affect NRR.`,
+      `${noBaselineCount} portfolio account${noBaselineCount === 1 ? " has" : "s have"} no prior-quarter CARR and therefore does not affect NRR.`,
     );
   }
 
@@ -417,13 +414,13 @@ export async function generateAccountManagementReport(
     .sort((a, b) => b.previousArr - a.previousArr || a.companyName.localeCompare(b.companyName));
 
   return {
-    month: window.month,
-    monthLabel: monthLabel(window.currentMonthKey),
-    previousMonthKey: window.previousMonthKey,
-    previousMonthLabel: monthLabel(window.previousMonthKey),
-    currentMonthKey: window.currentMonthKey,
-    currentMonthLabel: monthLabel(window.currentMonthKey),
-    ownerSnapshotDate: window.previousMonthEnd,
+    quarter: window.quarter,
+    quarterLabel: quarterLabel(window.currentQuarterKey),
+    previousQuarterKey: window.previousQuarterKey,
+    previousQuarterLabel: quarterLabel(window.previousQuarterKey),
+    currentQuarterKey: window.currentQuarterKey,
+    currentQuarterLabel: quarterLabel(window.currentQuarterKey),
+    ownerSnapshotDate: window.previousQuarterEnd,
     targetCurrency: FX_TARGET_CURRENCY,
     generatedAt: new Date().toISOString(),
     allHubspot,
@@ -437,14 +434,14 @@ export async function generateAccountManagementReport(
     methodology: {
       portfolioDealType: "All HubSpot deals whose Deal Type is Existing Business, regardless of deal stage.",
       allHubspotCohort:
-        "Company-wide NRR includes every company with prior-month CARR across all deals in the HubSpot CARR report, regardless of deal owner. It is separate from the three-person Account Management team cohort.",
+        "Company-wide NRR includes every company with prior-quarter-end CARR across all deals in the HubSpot CARR report, regardless of deal owner. It is separate from the three-person Account Management team cohort.",
       outsideTeamCohort:
-        `The outside-team table is the company-wide prior-month NRR cohort minus companies assigned to Chloé, Sam, or Kieran on ${window.previousMonthEnd}. Deal owners use Existing Business ownership first, then the company's CARR-producing deal ownership when no Existing Business deal is available.`,
-      ownerCohort: `Each company is assigned to Chloé, Sam, or Kieran using Existing Business deal-owner history as of ${window.previousMonthEnd}. If a company has conflicting managers, the most recently assigned deal wins.`,
+        `The outside-team table is the company-wide prior-quarter NRR cohort minus companies assigned to Chloé, Sam, or Kieran on ${window.previousQuarterEnd}. Deal owners use Existing Business ownership first, then the company's CARR-producing deal ownership when no Existing Business deal is available.`,
+      ownerCohort: `Each company is assigned to Chloé, Sam, or Kieran using Existing Business deal-owner history as of ${window.previousQuarterEnd}. If a company has conflicting managers, the most recently assigned deal wins.`,
       carrCalculation:
         "Previous and current ARR use the HubSpot CARR report's contracted-ARR engine: recurring line items are annualized, converted using close-month FX, and included when their contract window covers the month end.",
       nrrFormula:
-        "NRR = current month-end CARR for the same prior-month account cohort ÷ prior month-end CARR. Accounts with no prior-month CARR are shown but excluded from both sides of NRR.",
+        "NRR = current quarter-end CARR for the same prior-quarter-end account cohort ÷ prior quarter-end CARR. Accounts with no prior-quarter-end CARR are shown but excluded from both sides of NRR.",
     },
   };
 }
