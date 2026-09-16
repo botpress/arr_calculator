@@ -186,6 +186,7 @@ export type StripeThroughMrrCustomerArrRequest = {
   endDate: string;
   targetCurrency: string;
   grain?: "daily" | "monthly";
+  baseSubscriptionOnly?: boolean;
 };
 
 export type StripeThroughMrrCustomerArrResult = {
@@ -3933,6 +3934,69 @@ export async function queryStripeThroughMrrCustomerArrFromBigQuery(
   const table = getStripeArrCorrectMrrChangeTable();
   const customersTable = getStripeCustomersTable();
   const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const productsTable = getStripeProductsTable(profile);
+  const pricesTable = getStripePricesTable(profile);
+  const baseSubscriptionOnly = request.baseSubscriptionOnly === true;
+  const baseSubscriptionCtes = baseSubscriptionOnly
+    ? `,
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    MAX(COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '')) AS product_name,
+    MAX(COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '')) AS product_description
+  FROM \`${productsTable}\`
+  GROUP BY product_id
+),
+prices_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.id')), ''), '(blank)') AS price_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.nickname')), ''), '')) AS price_nickname,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.lookup_key')), ''), '')) AS price_lookup_key,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.version')), ''), '')) AS metadata_version,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.plan_version')), ''), '')) AS metadata_plan_version
+  FROM (
+    SELECT TO_JSON_STRING(p) AS raw_json
+    FROM \`${pricesTable}\` p
+  )
+  GROUP BY price_id
+),
+described_events AS (
+  SELECT
+    es.*,
+    LOWER(
+      CONCAT(
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_nickname')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_description')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_name')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.price_nickname), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.price_lookup_key), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.metadata_version), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.metadata_plan_version), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.product_name')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pl.product_name), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pl.product_description), ''), ''),
+        ' '
+      )
+    ) AS plan_hints
+  FROM events_source es
+  LEFT JOIN products_lookup pl
+    ON pl.product_id = es.product_id
+  LEFT JOIN prices_lookup pr
+    ON pr.price_id = COALESCE(
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price.id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price')), ''),
+      '(blank)'
+    )
+)`
+    : "";
+  const eventsBaseSource = baseSubscriptionOnly ? "described_events" : "events_source";
+  const baseSubscriptionFilter = baseSubscriptionOnly
+    ? `
+  WHERE
+    REGEXP_CONTAINS(e.plan_hints, r'(^|[^a-z])(enterprise|managed|team|plus|pay\\s*as\\s*you\\s*go|payg|free)([^a-z]|$)')
+    AND NOT REGEXP_CONTAINS(e.plan_hints, r'add\\s*ons?|ai\\s+tokens?|conversation\\s+sessions?|web\\s+search\\s+and\\s+crawl')`
+    : "";
 
   const query = `
 WITH bounds AS (
@@ -3977,6 +4041,7 @@ events_source AS (
   SELECT
     t.event_timestamp,
     COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+    COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)') AS product_id,
     TO_JSON_STRING(t) AS raw_json,
     CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major
   FROM \`${table}\` AS t
@@ -3984,10 +4049,10 @@ events_source AS (
   WHERE
     LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
     AND t.event_timestamp < TIMESTAMP(b.requested_end_exclusive_date)
-),
+)${baseSubscriptionCtes},
 customer_ids_in_scope AS (
   SELECT DISTINCT customer_id
-  FROM events_source
+  FROM ${eventsBaseSource}
   WHERE customer_id <> '(blank)'
 ),
 customers_workspace_lookup AS (
@@ -4046,9 +4111,10 @@ events_base AS (
       ''
     ) AS workspace_id,
     e.mrr_change_major
-  FROM events_source e
+  FROM ${eventsBaseSource} e
   LEFT JOIN customers_lookup cl
     ON cl.customer_id = e.customer_id
+${baseSubscriptionFilter}
 ),
 customer_ids_by_key AS (
   SELECT

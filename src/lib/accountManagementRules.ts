@@ -27,6 +27,24 @@ export function companyCsmOwnerId(properties: Record<string, unknown> | null | u
   return String(properties?.csm_owner || "").trim();
 }
 
+export function dealChurnReason(properties: Record<string, unknown> | null | undefined) {
+  for (const property of ["loss_reason__c", "other_loss_reason__c", "closed_lost_reason"]) {
+    const value = String(properties?.[property] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+export function isTransactionalTeamPlan(values: unknown[]) {
+  const normalized = (values || [])
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  const hasTeam = /(^|[^a-z0-9])team([^a-z0-9]|$)/.test(normalized);
+  const hasPlus = /(^|[^a-z0-9])plus([^a-z0-9]|$)/.test(normalized);
+  return hasTeam && !hasPlus;
+}
+
 function ownerIdFromEnv(name: string, fallback: string) {
   return String(process.env[name] || fallback).trim() || fallback;
 }

@@ -85,6 +85,7 @@ export type SalesAssistDealMatch = {
   closedAtMs: number;
   dealName: string;
   primaryCompanyId: string;
+  churnReason: string;
 };
 
 function getToken() {
@@ -674,6 +675,7 @@ function buildClosedLostReasonPropCandidates() {
         configured,
         configured ? (configured.endsWith("__c") ? configured.slice(0, -3) : `${configured}__c`) : "",
         "loss_reason__c",
+        "other_loss_reason__c",
         "loss_reason",
         "closed_lost_reason",
         "closed_lost_reason__c",
@@ -834,7 +836,14 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
     const deals = await fetchDealsForStageWithWorkspaceCandidates(
       stageId,
       workspacePropCandidates,
-      ["closedate", "dealname", "hs_primary_associated_company"],
+      [
+        "closedate",
+        "dealname",
+        "hs_primary_associated_company",
+        "loss_reason__c",
+        "other_loss_reason__c",
+        "closed_lost_reason",
+      ],
       dateRange,
     );
     for (const deal of deals || []) {
@@ -854,6 +863,9 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
         closedAtMs,
         dealName: String(properties.dealname || "").trim(),
         primaryCompanyId: String(properties.hs_primary_associated_company || "").trim(),
+        churnReason: String(
+          properties.loss_reason__c || properties.other_loss_reason__c || properties.closed_lost_reason || "",
+        ).trim(),
       });
     }
   }
@@ -885,6 +897,9 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
         closedAtMs,
         dealName: String(properties.dealname || "").trim(),
         primaryCompanyId: String(properties.hs_primary_associated_company || "").trim(),
+        churnReason: String(
+          properties.loss_reason__c || properties.other_loss_reason__c || properties.closed_lost_reason || "",
+        ).trim(),
       });
     }
   }

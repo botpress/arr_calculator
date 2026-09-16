@@ -94,11 +94,11 @@ function RetentionSummaryStats({
   return (
     <div className="stripe-ui__stats account-management__stats">
       <article className="stripe-ui__stat">
-        <p className="stripe-ui__stat-label">Starting CARR</p>
+        <p className="stripe-ui__stat-label">Starting ARR</p>
         <p className="stripe-ui__stat-value">{formatMoney(metrics.previousArr, currency)}</p>
       </article>
       <article className="stripe-ui__stat">
-        <p className="stripe-ui__stat-label">Ending CARR</p>
+        <p className="stripe-ui__stat-label">Ending ARR</p>
         <p className="stripe-ui__stat-value">{formatMoney(metrics.currentArr, currency)}</p>
       </article>
       <article className="stripe-ui__stat">
@@ -151,11 +151,11 @@ function OwnerSection({
 
       <div className="stripe-ui__stats account-management__stats">
         <article className="stripe-ui__stat">
-          <p className="stripe-ui__stat-label">{data.previousQuarterLabel} CARR</p>
+          <p className="stripe-ui__stat-label">{data.previousQuarterLabel} ARR</p>
           <p className="stripe-ui__stat-value">{formatMoney(owner.previousArr, data.targetCurrency)}</p>
         </article>
         <article className="stripe-ui__stat">
-          <p className="stripe-ui__stat-label">{data.currentQuarterLabel} CARR</p>
+          <p className="stripe-ui__stat-label">{data.currentQuarterLabel} ARR</p>
           <p className="stripe-ui__stat-value">{formatMoney(owner.currentArr, data.targetCurrency)}</p>
         </article>
         <article className="stripe-ui__stat">
@@ -181,9 +181,10 @@ function OwnerSection({
           <thead>
             <tr>
               <th>Company</th>
-              <th>Existing Business deal(s)</th>
-              <th>{data.previousQuarterLabel} CARR</th>
-              <th>{data.currentQuarterLabel} CARR</th>
+              <th>Qualifying deal(s)</th>
+              <th>ARR source</th>
+              <th>{data.previousQuarterLabel} ARR</th>
+              <th>{data.currentQuarterLabel} ARR</th>
               <th>Change</th>
               <th>Account NRR</th>
               <th>Movement</th>
@@ -202,16 +203,24 @@ function OwnerSection({
                   <td>
                     <div className="account-management__deals">
                       {account.portfolioDealNames.map((dealName, index) => (
-                        <a
-                          href={account.portfolioDealUrls[index]}
-                          target="_blank"
-                          rel="noreferrer"
-                          key={account.portfolioDealIds[index]}
-                        >
-                          {dealName}
-                        </a>
+                        <div key={account.portfolioDealIds[index]}>
+                          <a
+                            href={account.portfolioDealUrls[index]}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {dealName}
+                          </a>
+                          <div className="account-management__muted">
+                            Churn reason: {account.portfolioDealChurnReasons[index] || "—"}
+                          </div>
+                        </div>
                       ))}
                     </div>
+                  </td>
+                  <td>
+                    <strong>{account.revenueSource === "stripe_arr" ? "Stripe" : "HubSpot CARR"}</strong>
+                    {account.workspaceId ? <div className="account-management__muted">Workspace {account.workspaceId}</div> : null}
                   </td>
                   <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>
                   <td>{formatMoney(account.currentArr, data.targetCurrency)}</td>
@@ -224,7 +233,7 @@ function OwnerSection({
               ))
             ) : (
               <tr>
-                <td colSpan={7}>No Existing Business portfolio accounts currently have this company CSM owner.</td>
+                <td colSpan={8}>No qualifying portfolio accounts currently have this company CSM owner.</td>
               </tr>
             )}
           </tbody>
@@ -351,7 +360,7 @@ export default function AccountManagementPage() {
       {loading ? (
         <section className="stripe-ui__panel ui-reveal ui-reveal-2">
           <h2 className="stripe-ui__panel-title">Calculating account NRR</h2>
-          <p className="stripe-ui__panel-subtitle">Loading company CSM owners and quarter-end HubSpot CARR.</p>
+          <p className="stripe-ui__panel-subtitle">Loading company CSM owners and quarter-end HubSpot/Stripe ARR.</p>
           <div className="stripe-ui__skeleton-grid" aria-label="Loading Account Management report">
             <div className="stripe-ui__skeleton-row" />
             <div className="stripe-ui__skeleton-row" />
@@ -366,17 +375,17 @@ export default function AccountManagementPage() {
             <div className="account-management__owner-heading">
               <div>
                 <div className="stripe-ui__eyebrow">Company-wide retention</div>
-                <h2 className="stripe-ui__panel-title">{data.quarterLabel} · All HubSpot deals</h2>
+                <h2 className="stripe-ui__panel-title">{data.quarterLabel} · Company-wide</h2>
                 <p className="stripe-ui__panel-subtitle">
-                  Every owner and company in the HubSpot CARR report · {data.allHubspot.baselineAccountCount} starting compan{data.allHubspot.baselineAccountCount === 1 ? "y" : "ies"}
+                  HubSpot CARR plus eligible Transactional Team customers from Stripe · {data.allCompanies.baselineAccountCount} starting compan{data.allCompanies.baselineAccountCount === 1 ? "y" : "ies"}
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--all">
-                <span>All HubSpot NRR</span>
-                <strong>{formatPct(data.allHubspot.nrrPct)}</strong>
+                <span>Company-wide NRR</span>
+                <strong>{formatPct(data.allCompanies.nrrPct)}</strong>
               </div>
             </div>
-            <RetentionSummaryStats metrics={data.allHubspot} currency={data.targetCurrency} />
+            <RetentionSummaryStats metrics={data.allCompanies} currency={data.targetCurrency} />
           </section>
 
           <section className="stripe-ui__panel account-management__team ui-reveal ui-reveal-2">
@@ -423,8 +432,9 @@ export default function AccountManagementPage() {
                     <th>Company</th>
                     <th>Current company CSM owner</th>
                     <th>Deal(s)</th>
-                    <th>{data.previousQuarterLabel} CARR</th>
-                    <th>{data.currentQuarterLabel} CARR</th>
+                    <th>ARR source</th>
+                    <th>{data.previousQuarterLabel} ARR</th>
+                    <th>{data.currentQuarterLabel} ARR</th>
                     <th>Change</th>
                     <th>Account NRR</th>
                     <th>Movement</th>
@@ -446,16 +456,24 @@ export default function AccountManagementPage() {
                       <td>
                         <div className="account-management__deals">
                           {account.portfolioDealIds.length ? account.portfolioDealNames.map((dealName, index) => (
-                            <a
-                              href={account.portfolioDealUrls[index]}
-                              target="_blank"
-                              rel="noreferrer"
-                              key={account.portfolioDealIds[index]}
-                            >
-                              {dealName}
-                            </a>
+                            <div key={account.portfolioDealIds[index]}>
+                              <a
+                                href={account.portfolioDealUrls[index]}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {dealName}
+                              </a>
+                              <div className="account-management__muted">
+                                Churn reason: {account.portfolioDealChurnReasons[index] || "—"}
+                              </div>
+                            </div>
                           )) : "—"}
                         </div>
+                      </td>
+                      <td>
+                        <strong>{account.revenueSource === "stripe_arr" ? "Stripe" : "HubSpot CARR"}</strong>
+                        {account.workspaceId ? <div className="account-management__muted">Workspace {account.workspaceId}</div> : null}
                       </td>
                       <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>
                       <td>{formatMoney(account.currentArr, data.targetCurrency)}</td>
@@ -466,7 +484,7 @@ export default function AccountManagementPage() {
                       <td><span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span></td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={8}>Every company in the company-wide NRR cohort is assigned to one of the three account managers.</td></tr>
+                    <tr><td colSpan={9}>Every company in the company-wide NRR cohort is assigned to one of the three account managers.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -479,10 +497,10 @@ export default function AccountManagementPage() {
             <h2 className="stripe-ui__panel-title">Methodology</h2>
             <div className="account-management__methodology">
               <p><strong>Portfolio:</strong> {data.methodology.portfolioDealType}</p>
-              <p><strong>Company-wide cohort:</strong> {data.methodology.allHubspotCohort}</p>
+              <p><strong>Company-wide cohort:</strong> {data.methodology.allCompaniesCohort}</p>
               <p><strong>Outside-team cohort:</strong> {data.methodology.outsideTeamCohort}</p>
               <p><strong>Ownership:</strong> {data.methodology.ownerCohort}</p>
-              <p><strong>CARR:</strong> {data.methodology.carrCalculation}</p>
+              <p><strong>ARR:</strong> {data.methodology.carrCalculation}</p>
               <p><strong>NRR:</strong> {data.methodology.nrrFormula}</p>
             </div>
           </section>

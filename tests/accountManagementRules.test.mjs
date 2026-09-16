@@ -4,12 +4,32 @@ import {
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
   companyCsmOwnerId,
+  dealChurnReason,
+  isTransactionalTeamPlan,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
 
 test("assigns ownership from the company CSM owner field, not the deal owner field", () => {
   assert.equal(companyCsmOwnerId({ csm_owner: " 1314508841 ", hubspot_owner_id: "84747686" }), "1314508841");
   assert.equal(companyCsmOwnerId({ hubspot_owner_id: "84747686" }), "");
+});
+
+test("uses the first populated HubSpot deal loss reason as the churn reason", () => {
+  assert.equal(
+    dealChurnReason({ loss_reason__c: "Budget", other_loss_reason__c: "Other", closed_lost_reason: "Lost" }),
+    "Budget",
+  );
+  assert.equal(dealChurnReason({ other_loss_reason__c: "Product gap" }), "Product gap");
+  assert.equal(dealChurnReason({ closed_lost_reason: "No decision" }), "No decision");
+  assert.equal(dealChurnReason({}), "");
+});
+
+test("includes Transactional Team plans and excludes anything mentioning Plus", () => {
+  assert.equal(isTransactionalTeamPlan(["Team Annual"]), true);
+  assert.equal(isTransactionalTeamPlan(["Botpress Team", "Implementation"]), true);
+  assert.equal(isTransactionalTeamPlan(["Plus Annual"]), false);
+  assert.equal(isTransactionalTeamPlan(["Team migration", "Plus plan"]), false);
+  assert.equal(isTransactionalTeamPlan(["Enterprise"]), false);
 });
 
 test("builds the prior and selected quarter-end comparison window", () => {
