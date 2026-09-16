@@ -3,26 +3,19 @@ import test from "node:test";
 import {
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
+  calculateRetentionMetricsWithExclusions,
   companyCsmOwnerId,
-  dealChurnReason,
   fillZeroArrFromStripe,
   isTransactionalTeamPlan,
+  isExcludedNewAccountChurn,
+  isExcludedLegacyAccount,
+  retentionExclusionReason,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
 
 test("assigns ownership from the company CSM owner field, not the deal owner field", () => {
   assert.equal(companyCsmOwnerId({ csm_owner: " 1314508841 ", hubspot_owner_id: "84747686" }), "1314508841");
   assert.equal(companyCsmOwnerId({ hubspot_owner_id: "84747686" }), "");
-});
-
-test("uses the first populated HubSpot deal loss reason as the churn reason", () => {
-  assert.equal(
-    dealChurnReason({ loss_reason__c: "Budget", other_loss_reason__c: "Other", closed_lost_reason: "Lost" }),
-    "Budget",
-  );
-  assert.equal(dealChurnReason({ other_loss_reason__c: "Product gap" }), "Product gap");
-  assert.equal(dealChurnReason({ closed_lost_reason: "No decision" }), "No decision");
-  assert.equal(dealChurnReason({}), "");
 });
 
 test("includes Transactional Team plans and excludes anything mentioning Plus", () => {
@@ -94,6 +87,71 @@ test("calculates NRR from only accounts with prior-quarter ARR", () => {
     contractionArr: 50,
     churnArr: 50,
     nrrPct: 77.14,
+  });
+});
+
+test("excludes churned new accounts under 90 days from NRR while keeping them in account count", () => {
+  assert.equal(
+    isExcludedNewAccountChurn({ previousArr: 100, currentArr: 0, churnType: "New account (<90 days)" }),
+    true,
+  );
+  assert.equal(
+    isExcludedNewAccountChurn({ previousArr: 100, currentArr: 50, churnType: "New account (<90 days)" }),
+    false,
+  );
+  assert.deepEqual(
+    calculateRetentionMetricsWithExclusions([
+      { previousArr: 100, currentArr: 0, previousCloudArr: 100, currentCloudArr: 0, churnType: "New account (<90 days)" },
+      { previousArr: 200, currentArr: 180, previousCloudArr: 200, currentCloudArr: 180, churnType: "Standard Churn" },
+    ]),
+    {
+      accountCount: 2,
+      baselineAccountCount: 1,
+      previousArr: 200,
+      currentArr: 180,
+      netChange: -20,
+      expansionArr: 0,
+      contractionArr: 20,
+      churnArr: 0,
+      nrrPct: 90,
+    },
+  );
+});
+
+test("excludes legacy-only accounts but includes legacy-to-Cloud migrations", () => {
+  const legacyExpansion = {
+    previousArr: 100,
+    currentArr: 140,
+    previousCloudArr: 0,
+    currentCloudArr: 0,
+  };
+  const legacyChurn = {
+    previousArr: 100,
+    currentArr: 0,
+    previousCloudArr: 0,
+    currentCloudArr: 0,
+  };
+  const migration = {
+    previousArr: 100,
+    currentArr: 160,
+    previousCloudArr: 0,
+    currentCloudArr: 160,
+  };
+  assert.equal(isExcludedLegacyAccount(legacyExpansion), true);
+  assert.equal(isExcludedLegacyAccount(legacyChurn), true);
+  assert.equal(retentionExclusionReason(legacyExpansion), "legacy_only");
+  assert.equal(isExcludedLegacyAccount(migration), false);
+  assert.equal(retentionExclusionReason(migration), null);
+  assert.deepEqual(calculateRetentionMetricsWithExclusions([legacyExpansion, migration]), {
+    accountCount: 2,
+    baselineAccountCount: 1,
+    previousArr: 100,
+    currentArr: 160,
+    netChange: 60,
+    expansionArr: 60,
+    contractionArr: 0,
+    churnArr: 0,
+    nrrPct: 160,
   });
 });
 

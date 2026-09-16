@@ -212,7 +212,10 @@ function OwnerSection({
                             {dealName}
                           </a>
                           <div className="account-management__muted">
-                            Churn reason: {account.portfolioDealChurnReasons[index] || "—"}
+                            Churn type: {account.churnType || "—"}
+                          </div>
+                          <div className="account-management__muted">
+                            Deployment: {account.previousDeployment} → {account.currentDeployment}
                           </div>
                         </div>
                       ))}
@@ -233,8 +236,15 @@ function OwnerSection({
                   <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
                     {signedMoney(account.netChange, data.targetCurrency)}
                   </td>
-                  <td>{formatPct(account.nrrPct)}</td>
-                  <td><span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span></td>
+                  <td>{account.excludedFromNrr ? "Excluded" : formatPct(account.nrrPct)}</td>
+                  <td>
+                    <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
+                    {account.excludedFromNrr ? (
+                      <div className="account-management__muted">
+                        {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "New account churn · excluded from NRR"}
+                      </div>
+                    ) : null}
+                  </td>
                 </tr>
               ))
             ) : (
@@ -471,7 +481,10 @@ export default function AccountManagementPage() {
                                 {dealName}
                               </a>
                               <div className="account-management__muted">
-                                Churn reason: {account.portfolioDealChurnReasons[index] || "—"}
+                                Churn type: {account.churnType || "—"}
+                              </div>
+                              <div className="account-management__muted">
+                                Deployment: {account.previousDeployment} → {account.currentDeployment}
                               </div>
                             </div>
                           )) : "—"}
@@ -492,8 +505,15 @@ export default function AccountManagementPage() {
                       <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
                         {signedMoney(account.netChange, data.targetCurrency)}
                       </td>
-                      <td>{formatPct(account.nrrPct)}</td>
-                      <td><span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span></td>
+                      <td>{account.excludedFromNrr ? "Excluded" : formatPct(account.nrrPct)}</td>
+                      <td>
+                        <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
+                        {account.excludedFromNrr ? (
+                          <div className="account-management__muted">
+                            {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "New account churn · excluded from NRR"}
+                          </div>
+                        ) : null}
+                      </td>
                     </tr>
                   )) : (
                     <tr><td colSpan={9}>Every company in the company-wide NRR cohort is assigned to one of the three account managers.</td></tr>

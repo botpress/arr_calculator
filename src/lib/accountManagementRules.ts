@@ -9,6 +9,14 @@ export type RetentionAccountInput = {
   currentArr: number;
 };
 
+export type RetentionAccountWithChurnType = RetentionAccountInput & {
+  churnType?: string;
+  previousCloudArr?: number;
+  currentCloudArr?: number;
+};
+
+export type RetentionExclusionReason = "new_account_churn" | "legacy_only" | null;
+
 export type RetentionMovement = "expanded" | "contracted" | "churned" | "retained" | "not_in_baseline";
 
 export type RetentionMetrics = {
@@ -41,16 +49,26 @@ export function fillZeroArrFromStripe(
   };
 }
 
-export function companyCsmOwnerId(properties: Record<string, unknown> | null | undefined) {
-  return String(properties?.csm_owner || "").trim();
+export function isExcludedNewAccountChurn(account: RetentionAccountWithChurnType) {
+  return (
+    String(account.churnType || "").trim().toLowerCase() === "new account (<90 days)" &&
+    Number(account.previousArr || 0) > 0 &&
+    Number(account.currentArr || 0) <= 0
+  );
 }
 
-export function dealChurnReason(properties: Record<string, unknown> | null | undefined) {
-  for (const property of ["loss_reason__c", "other_loss_reason__c", "closed_lost_reason"]) {
-    const value = String(properties?.[property] || "").trim();
-    if (value) return value;
-  }
-  return "";
+export function isExcludedLegacyAccount(account: RetentionAccountWithChurnType) {
+  return Number(account.previousCloudArr || 0) <= 0 && Number(account.currentCloudArr || 0) <= 0;
+}
+
+export function retentionExclusionReason(account: RetentionAccountWithChurnType): RetentionExclusionReason {
+  if (isExcludedNewAccountChurn(account)) return "new_account_churn";
+  if (isExcludedLegacyAccount(account)) return "legacy_only";
+  return null;
+}
+
+export function companyCsmOwnerId(properties: Record<string, unknown> | null | undefined) {
+  return String(properties?.csm_owner || "").trim();
 }
 
 export function isTransactionalTeamPlan(values: unknown[]) {
@@ -169,5 +187,15 @@ export function calculateRetentionMetrics(accounts: RetentionAccountInput[]): Re
     contractionArr: round2(contractionArr),
     churnArr: round2(churnArr),
     nrrPct: normalizedPrevious > 0 ? round2((normalizedCurrent / normalizedPrevious) * 100) : null,
+  };
+}
+
+export function calculateRetentionMetricsWithExclusions(
+  accounts: RetentionAccountWithChurnType[],
+): RetentionMetrics {
+  const includedAccounts = (accounts || []).filter((account) => !retentionExclusionReason(account));
+  return {
+    ...calculateRetentionMetrics(includedAccounts),
+    accountCount: (accounts || []).length,
   };
 }

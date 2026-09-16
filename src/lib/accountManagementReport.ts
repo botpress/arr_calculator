@@ -1,13 +1,14 @@
 import {
   ACCOUNT_MANAGER_CONFIGS,
   accountManagementQuarterWindow,
-  calculateRetentionMetrics,
+  calculateRetentionMetricsWithExclusions,
   companyCsmOwnerId,
-  dealChurnReason,
   fillZeroArrFromStripe,
   isTransactionalTeamPlan,
+  retentionExclusionReason,
   retentionMovement,
   type RetentionMetrics,
+  type RetentionExclusionReason,
   type RetentionMovement,
 } from "@/lib/accountManagementRules";
 import {
@@ -37,7 +38,11 @@ export type AccountManagementAccountRow = {
   portfolioDealIds: string[];
   portfolioDealNames: string[];
   portfolioDealUrls: string[];
-  portfolioDealChurnReasons: string[];
+  churnType: string;
+  excludedFromNrr: boolean;
+  exclusionReason: RetentionExclusionReason;
+  previousDeployment: "cloud" | "legacy" | "mixed" | "none";
+  currentDeployment: "cloud" | "legacy" | "mixed" | "none";
   revenueSource: "hubspot_carr" | "stripe_arr" | "hubspot_stripe_fallback";
   workspaceId: string;
   previousArr: number;
@@ -90,15 +95,19 @@ type PortfolioCandidate = {
   companyId: string;
   dealId: string;
   dealName: string;
-  churnReason: string;
   revenueSource: "hubspot_carr" | "stripe_arr";
   workspaceId: string;
+  deploymentType: string;
 };
 
 type CompanyCarr = {
   companyName: string;
   previousArr: number;
   currentArr: number;
+  previousCloudArr: number;
+  currentCloudArr: number;
+  previousLegacyArr: number;
+  currentLegacyArr: number;
 };
 
 const TRANSACTIONAL_PLAN_LINE_ITEM_PROPERTIES = ["name", "description", "hs_product_name", "hs_sku"];
@@ -143,9 +152,38 @@ function currentProperty(deal: HubspotDeal, name: string) {
 }
 
 function addCarrValue(company: CompanyCarr, row: ReportRow, previousPeriodMonthKey: string, currentPeriodMonthKey: string) {
-  company.previousArr = round2(company.previousArr + Number(row.valuesByPeriod?.[previousPeriodMonthKey] || 0));
-  company.currentArr = round2(company.currentArr + Number(row.valuesByPeriod?.[currentPeriodMonthKey] || 0));
+  const previousArr = Number(row.valuesByPeriod?.[previousPeriodMonthKey] || 0);
+  const currentArr = Number(row.valuesByPeriod?.[currentPeriodMonthKey] || 0);
+  company.previousArr = round2(company.previousArr + previousArr);
+  company.currentArr = round2(company.currentArr + currentArr);
+  const isCloud = String(row.deploymentType || "").trim().toLowerCase() === "cloud";
+  if (isCloud) {
+    company.previousCloudArr = round2(company.previousCloudArr + previousArr);
+    company.currentCloudArr = round2(company.currentCloudArr + currentArr);
+  } else {
+    company.previousLegacyArr = round2(company.previousLegacyArr + previousArr);
+    company.currentLegacyArr = round2(company.currentLegacyArr + currentArr);
+  }
   if (!company.companyName) company.companyName = String(row.accountName || "").trim();
+}
+
+function emptyCompanyCarr(companyName = ""): CompanyCarr {
+  return {
+    companyName,
+    previousArr: 0,
+    currentArr: 0,
+    previousCloudArr: 0,
+    currentCloudArr: 0,
+    previousLegacyArr: 0,
+    currentLegacyArr: 0,
+  };
+}
+
+function deploymentLabel(cloudArr: number, legacyArr: number): "cloud" | "legacy" | "mixed" | "none" {
+  if (cloudArr > 0 && legacyArr > 0) return "mixed";
+  if (cloudArr > 0) return "cloud";
+  if (legacyArr > 0) return "legacy";
+  return "none";
 }
 
 export async function generateAccountManagementReport(
@@ -157,7 +195,7 @@ export async function generateAccountManagementReport(
 
   const [portfolioDeals, carrReport, salesAssistMatches] = await Promise.all([
     fetchDealsByDealType(
-      ["dealname", "dealtype", "workspace_id", "loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
+      ["dealname", "dealtype", "workspace_id", "deployment_type__c"],
       "existingbusiness",
     ),
     generateReport({
@@ -194,9 +232,9 @@ export async function generateAccountManagementReport(
       companyId,
       dealId,
       dealName: currentProperty(deal, "dealname") || `Deal ${dealId}`,
-      churnReason: dealChurnReason(deal.properties),
       revenueSource: "hubspot_carr",
       workspaceId: normalizeWorkspaceId(currentProperty(deal, "workspace_id")),
+      deploymentType: currentProperty(deal, "deployment_type__c"),
     });
   }
 
@@ -238,7 +276,7 @@ export async function generateAccountManagementReport(
       continue;
     }
     if (!carrByCompany.has(companyId)) {
-      carrByCompany.set(companyId, { companyName: String(row.accountName || "").trim(), previousArr: 0, currentArr: 0 });
+      carrByCompany.set(companyId, emptyCompanyCarr(String(row.accountName || "").trim()));
     }
     if (!carrDealIdsByCompany.has(companyId)) carrDealIdsByCompany.set(companyId, new Set());
     if (dealId) {
@@ -259,21 +297,21 @@ export async function generateAccountManagementReport(
   const existingBusinessCompanyIds = new Set(candidatesByCompany.keys());
 
   const carrCandidatesByCompany = new Map<string, PortfolioCandidate[]>();
-  const carrReasonsByDealId = await batchReadDealPropertyHistory(
+  const carrDealsById = await batchReadDealPropertyHistory(
     Array.from(carrDealNameById.keys()),
-    ["workspace_id", "loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
+    ["workspace_id", "deployment_type__c"],
   );
   for (const [companyId, dealIds] of carrDealIdsByCompany.entries()) {
     for (const dealId of dealIds) {
       if (!carrCandidatesByCompany.has(companyId)) carrCandidatesByCompany.set(companyId, []);
-      const dealProperties = carrReasonsByDealId.get(dealId)?.properties;
+      const dealProperties = carrDealsById.get(dealId)?.properties;
       carrCandidatesByCompany.get(companyId)!.push({
         companyId,
         dealId,
         dealName: carrDealNameById.get(dealId) || `Deal ${dealId}`,
-        churnReason: dealChurnReason(dealProperties),
         revenueSource: "hubspot_carr",
         workspaceId: normalizeWorkspaceId(dealProperties?.workspace_id),
+        deploymentType: String(dealProperties?.deployment_type__c || "").trim(),
       });
     }
   }
@@ -330,9 +368,9 @@ export async function generateAccountManagementReport(
       companyId,
       dealId: match.dealId,
       dealName: match.dealName || `Deal ${match.dealId}`,
-      churnReason: match.churnReason,
       revenueSource: "stripe_arr",
       workspaceId,
+      deploymentType: match.deploymentType,
     });
     if (!companyIdsByWorkspaceId.has(workspaceId)) companyIdsByWorkspaceId.set(workspaceId, new Set());
     companyIdsByWorkspaceId.get(workspaceId)!.add(companyId);
@@ -364,7 +402,7 @@ export async function generateAccountManagementReport(
   const stripeCarrByCompany = new Map<string, CompanyCarr>();
   for (const companyIds of companyIdsByWorkspaceId.values()) {
     for (const companyId of companyIds) {
-      stripeCarrByCompany.set(companyId, { companyName: "", previousArr: 0, currentArr: 0 });
+      stripeCarrByCompany.set(companyId, emptyCompanyCarr());
     }
   }
   if (companyIdsByWorkspaceId.size) {
@@ -411,6 +449,22 @@ export async function generateAccountManagementReport(
     candidatesByCompany.get(companyId)!.push(...candidates);
   }
 
+  const companyHasCloudDeal = (companyId: string) =>
+    [...(candidatesByCompany.get(companyId) || []), ...(carrCandidatesByCompany.get(companyId) || [])].some(
+      (candidate) => candidate.deploymentType.trim().toLowerCase() === "cloud",
+    );
+  const classifyStripeCarr = (companyId: string, stripeCarr: CompanyCarr, companyName = ""): CompanyCarr => {
+    const isCloud = companyHasCloudDeal(companyId);
+    return {
+      ...stripeCarr,
+      companyName: companyName || stripeCarr.companyName,
+      previousCloudArr: isCloud ? stripeCarr.previousArr : 0,
+      currentCloudArr: isCloud ? stripeCarr.currentArr : 0,
+      previousLegacyArr: isCloud ? 0 : stripeCarr.previousArr,
+      currentLegacyArr: isCloud ? 0 : stripeCarr.currentArr,
+    };
+  };
+
   const revenueByCompany = new Map<string, CompanyCarr>();
   const revenueSourceByCompany = new Map<string, AccountManagementAccountRow["revenueSource"]>();
   for (const [companyId, hubspotCarr] of carrByCompany.entries()) {
@@ -418,11 +472,10 @@ export async function generateAccountManagementReport(
     const isTransactionalOnly =
       transactionalCandidatesByCompany.has(companyId) && !existingBusinessCompanyIds.has(companyId);
     if (isTransactionalOnly) {
-      revenueByCompany.set(companyId, {
-        companyName: hubspotCarr.companyName,
-        previousArr: stripeCarr?.previousArr || 0,
-        currentArr: stripeCarr?.currentArr || 0,
-      });
+      revenueByCompany.set(
+        companyId,
+        classifyStripeCarr(companyId, stripeCarr || emptyCompanyCarr(), hubspotCarr.companyName),
+      );
       revenueSourceByCompany.set(companyId, "stripe_arr");
       continue;
     }
@@ -431,6 +484,18 @@ export async function generateAccountManagementReport(
       companyName: hubspotCarr.companyName,
       previousArr: round2(filled.previousArr),
       currentArr: round2(filled.currentArr),
+      previousCloudArr: filled.usedStripePrevious
+        ? (companyHasCloudDeal(companyId) ? round2(filled.previousArr) : 0)
+        : hubspotCarr.previousCloudArr,
+      currentCloudArr: filled.usedStripeCurrent
+        ? (companyHasCloudDeal(companyId) ? round2(filled.currentArr) : 0)
+        : hubspotCarr.currentCloudArr,
+      previousLegacyArr: filled.usedStripePrevious
+        ? (companyHasCloudDeal(companyId) ? 0 : round2(filled.previousArr))
+        : hubspotCarr.previousLegacyArr,
+      currentLegacyArr: filled.usedStripeCurrent
+        ? (companyHasCloudDeal(companyId) ? 0 : round2(filled.currentArr))
+        : hubspotCarr.currentLegacyArr,
     });
     revenueSourceByCompany.set(
       companyId,
@@ -439,10 +504,9 @@ export async function generateAccountManagementReport(
   }
   for (const [companyId, stripeCarr] of stripeCarrByCompany.entries()) {
     if (revenueByCompany.has(companyId)) continue;
-    revenueByCompany.set(companyId, stripeCarr);
+    revenueByCompany.set(companyId, classifyStripeCarr(companyId, stripeCarr));
     revenueSourceByCompany.set(companyId, "stripe_arr");
   }
-  const allCompanies = calculateRetentionMetrics(Array.from(revenueByCompany.values()));
   const transactionCompaniesWithoutStripeArr = Array.from(stripeCarrByCompany.entries()).filter(
     ([companyId, company]) =>
       transactionalCandidatesByCompany.has(companyId) &&
@@ -470,8 +534,26 @@ export async function generateAccountManagementReport(
     ...revenueByCompany.keys(),
   ]));
   const companiesById = companyIdsToRead.length
-    ? await batchReadCompanies(companyIdsToRead, ["name", "csm_owner"])
+    ? await batchReadCompanies(companyIdsToRead, ["name", "csm_owner", "churn_type"])
     : new Map();
+  const retentionInputs = Array.from(revenueByCompany.entries()).map(([companyId, carr]) => ({
+    ...carr,
+    churnType: String(companiesById.get(companyId)?.properties?.churn_type || "").trim(),
+  }));
+  const allCompanies = calculateRetentionMetricsWithExclusions(retentionInputs);
+  const exclusionReasons = retentionInputs.map(retentionExclusionReason);
+  const excludedNewAccountChurnCount = exclusionReasons.filter((reason) => reason === "new_account_churn").length;
+  if (excludedNewAccountChurnCount) {
+    warnings.add(
+      `${excludedNewAccountChurnCount} churned new account${excludedNewAccountChurnCount === 1 ? " was" : "s were"} excluded from NRR because company Churn Type is New account (<90 days).`,
+    );
+  }
+  const excludedLegacyAccountCount = exclusionReasons.filter((reason) => reason === "legacy_only").length;
+  if (excludedLegacyAccountCount) {
+    warnings.add(
+      `${excludedLegacyAccountCount} legacy-only account${excludedLegacyAccountCount === 1 ? " was" : "s were"} excluded from NRR because neither quarter-end snapshot had Cloud ARR. Legacy-to-Cloud migrations remain included.`,
+    );
+  }
   const accountsByOwnerId = new Map<string, AccountManagementAccountRow[]>(
     ACCOUNT_MANAGER_CONFIGS.map((owner) => [owner.ownerId, []]),
   );
@@ -479,13 +561,22 @@ export async function generateAccountManagementReport(
   for (const [companyId, candidates] of candidatesByCompany.entries()) {
     const ownerId = companyCsmOwnerId(companiesById.get(companyId)?.properties);
     if (!accountsByOwnerId.has(ownerId)) continue;
-    const carr = revenueByCompany.get(companyId) || { companyName: "", previousArr: 0, currentArr: 0 };
+    const carr = revenueByCompany.get(companyId) || emptyCompanyCarr();
     const companyName =
       String(companiesById.get(companyId)?.properties?.name || "").trim() ||
       carr.companyName ||
       `Company ${companyId}`;
     const previousArr = round2(carr.previousArr);
     const currentArr = round2(carr.currentArr);
+    const churnType = String(companiesById.get(companyId)?.properties?.churn_type || "").trim();
+    const exclusionReason = retentionExclusionReason({
+      previousArr,
+      currentArr,
+      previousCloudArr: carr.previousCloudArr,
+      currentCloudArr: carr.currentCloudArr,
+      churnType,
+    });
+    const excludedFromNrr = exclusionReason !== null;
     const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
     accountsByOwnerId.get(ownerId)!.push({
       companyId,
@@ -494,7 +585,11 @@ export async function generateAccountManagementReport(
       portfolioDealIds,
       portfolioDealNames: candidates.map((candidate) => candidate.dealName),
       portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
-      portfolioDealChurnReasons: candidates.map((candidate) => candidate.churnReason),
+      churnType,
+      excludedFromNrr,
+      exclusionReason,
+      previousDeployment: deploymentLabel(carr.previousCloudArr, carr.previousLegacyArr),
+      currentDeployment: deploymentLabel(carr.currentCloudArr, carr.currentLegacyArr),
       revenueSource: revenueSourceByCompany.get(companyId) || "hubspot_carr",
       workspaceId:
         [...candidates, ...(carrCandidatesByCompany.get(companyId) || [])].find((candidate) => candidate.workspaceId)
@@ -502,7 +597,7 @@ export async function generateAccountManagementReport(
       previousArr,
       currentArr,
       netChange: round2(currentArr - previousArr),
-      nrrPct: previousArr > 0 ? round2((currentArr / previousArr) * 100) : null,
+      nrrPct: previousArr > 0 && !excludedFromNrr ? round2((currentArr / previousArr) * 100) : null,
       movement: retentionMovement(previousArr, currentArr),
     });
   }
@@ -513,7 +608,11 @@ export async function generateAccountManagementReport(
     );
     return {
       ...owner,
-      ...calculateRetentionMetrics(accounts),
+      ...calculateRetentionMetricsWithExclusions(accounts.map((account) => ({
+        ...account,
+        previousCloudArr: account.previousDeployment === "cloud" || account.previousDeployment === "mixed" ? account.previousArr : 0,
+        currentCloudArr: account.currentDeployment === "cloud" || account.currentDeployment === "mixed" ? account.currentArr : 0,
+      }))),
       accounts,
     };
   });
@@ -547,6 +646,15 @@ export async function generateAccountManagementReport(
         `Company ${companyId}`;
       const previousArr = round2(carr.previousArr);
       const currentArr = round2(carr.currentArr);
+      const churnType = String(companiesById.get(companyId)?.properties?.churn_type || "").trim();
+      const exclusionReason = retentionExclusionReason({
+        previousArr,
+        currentArr,
+        previousCloudArr: carr.previousCloudArr,
+        currentCloudArr: carr.currentCloudArr,
+        churnType,
+      });
+      const excludedFromNrr = exclusionReason !== null;
       const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
       const revenueSource: AccountManagementAccountRow["revenueSource"] =
         revenueSourceByCompany.get(companyId) || "hubspot_carr";
@@ -559,7 +667,11 @@ export async function generateAccountManagementReport(
         portfolioDealIds,
         portfolioDealNames: candidates.map((candidate) => candidate.dealName),
         portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
-        portfolioDealChurnReasons: candidates.map((candidate) => candidate.churnReason),
+        churnType,
+        excludedFromNrr,
+        exclusionReason,
+        previousDeployment: deploymentLabel(carr.previousCloudArr, carr.previousLegacyArr),
+        currentDeployment: deploymentLabel(carr.currentCloudArr, carr.currentLegacyArr),
         revenueSource,
         workspaceId:
           [...candidates, ...(carrCandidatesByCompany.get(companyId) || [])].find((candidate) => candidate.workspaceId)
@@ -567,7 +679,7 @@ export async function generateAccountManagementReport(
         previousArr,
         currentArr,
         netChange: round2(currentArr - previousArr),
-        nrrPct: previousArr > 0 ? round2((currentArr / previousArr) * 100) : null,
+        nrrPct: previousArr > 0 && !excludedFromNrr ? round2((currentArr / previousArr) * 100) : null,
         movement: retentionMovement(previousArr, currentArr),
       };
     })
@@ -586,9 +698,17 @@ export async function generateAccountManagementReport(
     targetCurrency: FX_TARGET_CURRENCY,
     generatedAt: new Date().toISOString(),
     allCompanies,
-    team: calculateRetentionMetrics(allAccounts),
+    team: calculateRetentionMetricsWithExclusions(allAccounts.map((account) => ({
+      ...account,
+      previousCloudArr: account.previousDeployment === "cloud" || account.previousDeployment === "mixed" ? account.previousArr : 0,
+      currentCloudArr: account.currentDeployment === "cloud" || account.currentDeployment === "mixed" ? account.currentArr : 0,
+    }))),
     outsideTeam: {
-      ...calculateRetentionMetrics(outsideAccounts),
+      ...calculateRetentionMetricsWithExclusions(outsideAccounts.map((account) => ({
+        ...account,
+        previousCloudArr: account.previousDeployment === "cloud" || account.previousDeployment === "mixed" ? account.previousArr : 0,
+        currentCloudArr: account.currentDeployment === "cloud" || account.currentDeployment === "mixed" ? account.currentArr : 0,
+      }))),
       accounts: outsideAccounts,
     },
     owners,
@@ -597,14 +717,14 @@ export async function generateAccountManagementReport(
       portfolioDealType:
         "All HubSpot deals whose Deal Type is Existing Business, plus closed-won deals in the Transactional pipeline whose line items contain Team and do not contain Plus.",
       allCompaniesCohort:
-        "Company-wide NRR includes every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
+        "Company-wide NRR starts with every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. Legacy-only companies remain visible but are excluded from NRR. A company with legacy ARR in the prior snapshot and Cloud ARR in the current snapshot is included as a migration, using its full company ARR in both snapshots. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
       outsideTeamCohort:
         "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
       ownerCohort: "Each company is assigned using the current value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",
       carrCalculation:
         "Existing Business companies use the HubSpot CARR report's contracted-ARR engine, with each zero quarter-end column filled from Stripe base-subscription ARR when available. Closed-won Transactional deals whose line items identify Team and do not mention Plus use Stripe month-end base-subscription ARR, joined through the deal's primary workspace ID. Stripe add-ons, AI tokens, conversation sessions, and web search/crawl revenue are excluded. Non-zero HubSpot ARR is never replaced, and each company is counted once.",
       nrrFormula:
-        "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no prior-quarter-end ARR are shown but excluded from both sides of NRR.",
+        "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no prior-quarter-end ARR are shown but excluded from both sides. A churned company whose Churn Type is New account (<90 days) is excluded from the numerator, denominator, and churn total. Accounts with no Cloud ARR at either quarter end are also excluded. Legacy-to-Cloud migrations are included using total prior ARR and total current ARR, so their migration expansion contributes to NRR.",
     },
   };
 }
