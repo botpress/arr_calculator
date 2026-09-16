@@ -219,7 +219,13 @@ function OwnerSection({
                     </div>
                   </td>
                   <td>
-                    <strong>{account.revenueSource === "stripe_arr" ? "Stripe" : "HubSpot CARR"}</strong>
+                    <strong>
+                      {account.revenueSource === "stripe_arr"
+                        ? "Stripe"
+                        : account.revenueSource === "hubspot_stripe_fallback"
+                          ? "HubSpot + Stripe fallback"
+                          : "HubSpot CARR"}
+                    </strong>
                     {account.workspaceId ? <div className="account-management__muted">Workspace {account.workspaceId}</div> : null}
                   </td>
                   <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>
@@ -472,7 +478,13 @@ export default function AccountManagementPage() {
                         </div>
                       </td>
                       <td>
-                        <strong>{account.revenueSource === "stripe_arr" ? "Stripe" : "HubSpot CARR"}</strong>
+                        <strong>
+                          {account.revenueSource === "stripe_arr"
+                            ? "Stripe"
+                            : account.revenueSource === "hubspot_stripe_fallback"
+                              ? "HubSpot + Stripe fallback"
+                              : "HubSpot CARR"}
+                        </strong>
                         {account.workspaceId ? <div className="account-management__muted">Workspace {account.workspaceId}</div> : null}
                       </td>
                       <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>

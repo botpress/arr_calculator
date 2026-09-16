@@ -4,6 +4,7 @@ import {
   calculateRetentionMetrics,
   companyCsmOwnerId,
   dealChurnReason,
+  fillZeroArrFromStripe,
   isTransactionalTeamPlan,
   retentionMovement,
   type RetentionMetrics,
@@ -37,7 +38,7 @@ export type AccountManagementAccountRow = {
   portfolioDealNames: string[];
   portfolioDealUrls: string[];
   portfolioDealChurnReasons: string[];
-  revenueSource: "hubspot_carr" | "stripe_arr";
+  revenueSource: "hubspot_carr" | "stripe_arr" | "hubspot_stripe_fallback";
   workspaceId: string;
   previousArr: number;
   currentArr: number;
@@ -156,7 +157,7 @@ export async function generateAccountManagementReport(
 
   const [portfolioDeals, carrReport, salesAssistMatches] = await Promise.all([
     fetchDealsByDealType(
-      ["dealname", "dealtype", "loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
+      ["dealname", "dealtype", "workspace_id", "loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
       "existingbusiness",
     ),
     generateReport({
@@ -195,7 +196,7 @@ export async function generateAccountManagementReport(
       dealName: currentProperty(deal, "dealname") || `Deal ${dealId}`,
       churnReason: dealChurnReason(deal.properties),
       revenueSource: "hubspot_carr",
-      workspaceId: "",
+      workspaceId: normalizeWorkspaceId(currentProperty(deal, "workspace_id")),
     });
   }
 
@@ -257,6 +258,26 @@ export async function generateAccountManagementReport(
 
   const existingBusinessCompanyIds = new Set(candidatesByCompany.keys());
 
+  const carrCandidatesByCompany = new Map<string, PortfolioCandidate[]>();
+  const carrReasonsByDealId = await batchReadDealPropertyHistory(
+    Array.from(carrDealNameById.keys()),
+    ["workspace_id", "loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
+  );
+  for (const [companyId, dealIds] of carrDealIdsByCompany.entries()) {
+    for (const dealId of dealIds) {
+      if (!carrCandidatesByCompany.has(companyId)) carrCandidatesByCompany.set(companyId, []);
+      const dealProperties = carrReasonsByDealId.get(dealId)?.properties;
+      carrCandidatesByCompany.get(companyId)!.push({
+        companyId,
+        dealId,
+        dealName: carrDealNameById.get(dealId) || `Deal ${dealId}`,
+        churnReason: dealChurnReason(dealProperties),
+        revenueSource: "hubspot_carr",
+        workspaceId: normalizeWorkspaceId(dealProperties?.workspace_id),
+      });
+    }
+  }
+
   const transactionalMatches = salesAssistMatches.filter(
     (match) =>
       match.matchType === "transactional_closed_won" &&
@@ -317,6 +338,18 @@ export async function generateAccountManagementReport(
     companyIdsByWorkspaceId.get(workspaceId)!.add(companyId);
   }
 
+  for (const candidateMap of [candidatesByCompany, carrCandidatesByCompany]) {
+    for (const [companyId, candidates] of candidateMap.entries()) {
+      for (const candidate of candidates) {
+        if (!candidate.workspaceId) continue;
+        if (!companyIdsByWorkspaceId.has(candidate.workspaceId)) {
+          companyIdsByWorkspaceId.set(candidate.workspaceId, new Set());
+        }
+        companyIdsByWorkspaceId.get(candidate.workspaceId)!.add(companyId);
+      }
+    }
+  }
+
   if (missingTransactionalCompanyCount) {
     warnings.add(
       `${missingTransactionalCompanyCount} Transactional Team deal${missingTransactionalCompanyCount === 1 ? " was" : "s were"} excluded because no HubSpot company was associated.`,
@@ -329,8 +362,10 @@ export async function generateAccountManagementReport(
   }
 
   const stripeCarrByCompany = new Map<string, CompanyCarr>();
-  for (const companyId of transactionalCandidatesByCompany.keys()) {
-    stripeCarrByCompany.set(companyId, { companyName: "", previousArr: 0, currentArr: 0 });
+  for (const companyIds of companyIdsByWorkspaceId.values()) {
+    for (const companyId of companyIds) {
+      stripeCarrByCompany.set(companyId, { companyName: "", previousArr: 0, currentArr: 0 });
+    }
   }
   if (companyIdsByWorkspaceId.size) {
     const stripeArr = await queryStripeThroughMrrCustomerArrFromBigQuery(
@@ -376,13 +411,41 @@ export async function generateAccountManagementReport(
     candidatesByCompany.get(companyId)!.push(...candidates);
   }
 
-  const revenueByCompany = new Map(carrByCompany);
-  for (const [companyId, carr] of stripeCarrByCompany.entries()) {
-    if (!existingBusinessCompanyIds.has(companyId)) revenueByCompany.set(companyId, carr);
+  const revenueByCompany = new Map<string, CompanyCarr>();
+  const revenueSourceByCompany = new Map<string, AccountManagementAccountRow["revenueSource"]>();
+  for (const [companyId, hubspotCarr] of carrByCompany.entries()) {
+    const stripeCarr = stripeCarrByCompany.get(companyId);
+    const isTransactionalOnly =
+      transactionalCandidatesByCompany.has(companyId) && !existingBusinessCompanyIds.has(companyId);
+    if (isTransactionalOnly) {
+      revenueByCompany.set(companyId, {
+        companyName: hubspotCarr.companyName,
+        previousArr: stripeCarr?.previousArr || 0,
+        currentArr: stripeCarr?.currentArr || 0,
+      });
+      revenueSourceByCompany.set(companyId, "stripe_arr");
+      continue;
+    }
+    const filled = fillZeroArrFromStripe(hubspotCarr, stripeCarr);
+    revenueByCompany.set(companyId, {
+      companyName: hubspotCarr.companyName,
+      previousArr: round2(filled.previousArr),
+      currentArr: round2(filled.currentArr),
+    });
+    revenueSourceByCompany.set(
+      companyId,
+      filled.usedStripePrevious || filled.usedStripeCurrent ? "hubspot_stripe_fallback" : "hubspot_carr",
+    );
+  }
+  for (const [companyId, stripeCarr] of stripeCarrByCompany.entries()) {
+    if (revenueByCompany.has(companyId)) continue;
+    revenueByCompany.set(companyId, stripeCarr);
+    revenueSourceByCompany.set(companyId, "stripe_arr");
   }
   const allCompanies = calculateRetentionMetrics(Array.from(revenueByCompany.values()));
   const transactionCompaniesWithoutStripeArr = Array.from(stripeCarrByCompany.entries()).filter(
     ([companyId, company]) =>
+      transactionalCandidatesByCompany.has(companyId) &&
       !existingBusinessCompanyIds.has(companyId) &&
       company.previousArr === 0 &&
       company.currentArr === 0,
@@ -392,24 +455,14 @@ export async function generateAccountManagementReport(
       `${transactionCompaniesWithoutStripeArr} eligible Transactional Team compan${transactionCompaniesWithoutStripeArr === 1 ? "y has" : "ies have"} no Stripe ARR at either quarter end for its primary workspace ID.`,
     );
   }
-
-  const carrCandidatesByCompany = new Map<string, PortfolioCandidate[]>();
-  const carrReasonsByDealId = await batchReadDealPropertyHistory(
-    Array.from(carrDealNameById.keys()),
-    ["loss_reason__c", "other_loss_reason__c", "closed_lost_reason"],
-  );
-  for (const [companyId, dealIds] of carrDealIdsByCompany.entries()) {
-    for (const dealId of dealIds) {
-      if (!carrCandidatesByCompany.has(companyId)) carrCandidatesByCompany.set(companyId, []);
-      carrCandidatesByCompany.get(companyId)!.push({
-        companyId,
-        dealId,
-        dealName: carrDealNameById.get(dealId) || `Deal ${dealId}`,
-        churnReason: dealChurnReason(carrReasonsByDealId.get(dealId)?.properties),
-        revenueSource: "hubspot_carr",
-        workspaceId: "",
-      });
-    }
+  const zeroCarrCompaniesWithoutWorkspace = Array.from(carrByCompany.entries()).filter(
+    ([companyId, company]) =>
+      (company.previousArr === 0 || company.currentArr === 0) && !stripeCarrByCompany.has(companyId),
+  ).length;
+  if (zeroCarrCompaniesWithoutWorkspace) {
+    warnings.add(
+      `${zeroCarrCompaniesWithoutWorkspace} compan${zeroCarrCompaniesWithoutWorkspace === 1 ? "y has" : "ies have"} a zero HubSpot ARR column but no primary workspace ID available for the Stripe fallback.`,
+    );
   }
 
   const companyIdsToRead = Array.from(new Set([
@@ -442,8 +495,10 @@ export async function generateAccountManagementReport(
       portfolioDealNames: candidates.map((candidate) => candidate.dealName),
       portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
       portfolioDealChurnReasons: candidates.map((candidate) => candidate.churnReason),
-      revenueSource: existingBusinessCompanyIds.has(companyId) ? "hubspot_carr" : "stripe_arr",
-      workspaceId: candidates.find((candidate) => candidate.workspaceId)?.workspaceId || "",
+      revenueSource: revenueSourceByCompany.get(companyId) || "hubspot_carr",
+      workspaceId:
+        [...candidates, ...(carrCandidatesByCompany.get(companyId) || [])].find((candidate) => candidate.workspaceId)
+          ?.workspaceId || "",
       previousArr,
       currentArr,
       netChange: round2(currentArr - previousArr),
@@ -493,9 +548,8 @@ export async function generateAccountManagementReport(
       const previousArr = round2(carr.previousArr);
       const currentArr = round2(carr.currentArr);
       const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
-      const revenueSource: AccountManagementAccountRow["revenueSource"] = existingBusinessCompanyIds.has(companyId)
-        ? "hubspot_carr"
-        : "stripe_arr";
+      const revenueSource: AccountManagementAccountRow["revenueSource"] =
+        revenueSourceByCompany.get(companyId) || "hubspot_carr";
       return {
         companyId,
         companyName,
@@ -507,7 +561,9 @@ export async function generateAccountManagementReport(
         portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
         portfolioDealChurnReasons: candidates.map((candidate) => candidate.churnReason),
         revenueSource,
-        workspaceId: candidates.find((candidate) => candidate.workspaceId)?.workspaceId || "",
+        workspaceId:
+          [...candidates, ...(carrCandidatesByCompany.get(companyId) || [])].find((candidate) => candidate.workspaceId)
+            ?.workspaceId || "",
         previousArr,
         currentArr,
         netChange: round2(currentArr - previousArr),
@@ -541,12 +597,12 @@ export async function generateAccountManagementReport(
       portfolioDealType:
         "All HubSpot deals whose Deal Type is Existing Business, plus closed-won deals in the Transactional pipeline whose line items contain Team and do not contain Plus.",
       allCompaniesCohort:
-        "Company-wide NRR includes every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once.",
+        "Company-wide NRR includes every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
       outsideTeamCohort:
         "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
       ownerCohort: "Each company is assigned using the current value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",
       carrCalculation:
-        "Existing Business companies use the HubSpot CARR report's contracted-ARR engine. Closed-won Transactional deals whose line items identify Team and do not mention Plus use Stripe month-end base-subscription ARR, joined through the deal's primary workspace ID. Stripe add-ons, AI tokens, conversation sessions, and web search/crawl revenue are excluded. If a company has both qualifying deal types, Existing Business HubSpot CARR takes precedence to avoid double counting.",
+        "Existing Business companies use the HubSpot CARR report's contracted-ARR engine, with each zero quarter-end column filled from Stripe base-subscription ARR when available. Closed-won Transactional deals whose line items identify Team and do not mention Plus use Stripe month-end base-subscription ARR, joined through the deal's primary workspace ID. Stripe add-ons, AI tokens, conversation sessions, and web search/crawl revenue are excluded. Non-zero HubSpot ARR is never replaced, and each company is counted once.",
       nrrFormula:
         "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no prior-quarter-end ARR are shown but excluded from both sides of NRR.",
     },

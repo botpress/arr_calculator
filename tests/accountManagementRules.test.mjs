@@ -5,6 +5,7 @@ import {
   calculateRetentionMetrics,
   companyCsmOwnerId,
   dealChurnReason,
+  fillZeroArrFromStripe,
   isTransactionalTeamPlan,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
@@ -30,6 +31,30 @@ test("includes Transactional Team plans and excludes anything mentioning Plus", 
   assert.equal(isTransactionalTeamPlan(["Plus Annual"]), false);
   assert.equal(isTransactionalTeamPlan(["Team migration", "Plus plan"]), false);
   assert.equal(isTransactionalTeamPlan(["Enterprise"]), false);
+});
+
+test("fills only zero HubSpot ARR columns from Stripe base-subscription ARR", () => {
+  assert.deepEqual(
+    fillZeroArrFromStripe(
+      { previousArr: 0, currentArr: 120 },
+      { previousArr: 90, currentArr: 130 },
+    ),
+    { previousArr: 90, currentArr: 120, usedStripePrevious: true, usedStripeCurrent: false },
+  );
+  assert.deepEqual(
+    fillZeroArrFromStripe(
+      { previousArr: 100, currentArr: 0 },
+      { previousArr: 110, currentArr: 80 },
+    ),
+    { previousArr: 100, currentArr: 80, usedStripePrevious: false, usedStripeCurrent: true },
+  );
+  assert.deepEqual(
+    fillZeroArrFromStripe(
+      { previousArr: 0, currentArr: 0 },
+      { previousArr: 0, currentArr: 0 },
+    ),
+    { previousArr: 0, currentArr: 0, usedStripePrevious: false, usedStripeCurrent: false },
+  );
 });
 
 test("builds the prior and selected quarter-end comparison window", () => {

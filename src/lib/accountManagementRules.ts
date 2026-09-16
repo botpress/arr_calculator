@@ -23,6 +23,24 @@ export type RetentionMetrics = {
   nrrPct: number | null;
 };
 
+export function fillZeroArrFromStripe(
+  hubspot: RetentionAccountInput,
+  stripe: RetentionAccountInput | null | undefined,
+) {
+  const hubspotPrevious = Number(hubspot.previousArr || 0);
+  const hubspotCurrent = Number(hubspot.currentArr || 0);
+  const stripePrevious = Number(stripe?.previousArr || 0);
+  const stripeCurrent = Number(stripe?.currentArr || 0);
+  const usedStripePrevious = hubspotPrevious === 0 && stripePrevious !== 0;
+  const usedStripeCurrent = hubspotCurrent === 0 && stripeCurrent !== 0;
+  return {
+    previousArr: usedStripePrevious ? stripePrevious : hubspotPrevious,
+    currentArr: usedStripeCurrent ? stripeCurrent : hubspotCurrent,
+    usedStripePrevious,
+    usedStripeCurrent,
+  };
+}
+
 export function companyCsmOwnerId(properties: Record<string, unknown> | null | undefined) {
   return String(properties?.csm_owner || "").trim();
 }
