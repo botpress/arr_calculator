@@ -435,7 +435,14 @@ export default function CommissionsPage() {
                             </div>
                           ) : null}
                         </td>
-                        <td>{formatMoney(deal.grossCommission, currency)}</td>
+                        <td>
+                          {formatMoney(deal.grossCommission, currency)}
+                          {deal.clawback > 0 ? (
+                            <div style={{ color: "#64748b", fontSize: 12 }}>
+                              Original commission {formatMoney(deal.initialGrossCommission, currency)}
+                            </div>
+                          ) : null}
+                        </td>
                         <td>
                           {formatMoney(deal.paidAmount, currency)}
                           <div style={{ color: "#64748b", fontSize: 12 }}>
