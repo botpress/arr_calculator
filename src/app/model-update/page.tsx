@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useMemo, useState } from "react";
 
 type AnalyticsBlock = {
@@ -1380,17 +1379,6 @@ export default function ModelUpdatePage() {
             <p className="stripe-ui__subtitle">
               Upload required source files and date range for model refresh input packaging.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/combined-billing-overview" className="stripe-ui__hero-link">
-              Open Combined Billing Overview
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
           </div>
         </div>
       </section>

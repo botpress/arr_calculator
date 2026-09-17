@@ -10,6 +10,9 @@ export const LI_PROPS = [
   "hs_billing_period_start_date",
   "hs_billing_period_end_date",
   "hs_term_in_months",
+  "hs_recurring_billing_period",
+  "hs_recurring_billing_number_of_payments",
+  "hs_recurring_billing_terms",
 
   // pricing
   "amount",

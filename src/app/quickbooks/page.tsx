@@ -139,18 +139,6 @@ export default function QuickBooksPage() {
             </p>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">
-              Open HubSpot report
-            </Link>
-            <Link href="/stripe-billing-overview" className="stripe-ui__hero-link">
-              Open Stripe Billing Overview
-            </Link>
-            <Link href="/ai-spend" className="stripe-ui__hero-link">
-              Open AI spend
-            </Link>
             <a href="/api/quickbooks/connect?mode=ensure_required" className="stripe-ui__hero-link">
               Connect QuickBooks
             </a>

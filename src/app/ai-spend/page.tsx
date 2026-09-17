@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 type Grain = "daily" | "weekly" | "monthly" | "quarterly";
@@ -267,26 +266,6 @@ export default function AiSpendPage() {
               Uses Stripe BigQuery invoice lines (metered usage, net of line-item discounts) for the selected period and
               displays totals, per-customer breakdown, and raw line items.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/stripe-billing-overview" className="stripe-ui__hero-link">
-              Open Stripe Billing Overview
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">
-              Open HubSpot report
-            </Link>
-            <Link href="/ai-spend" className="stripe-ui__hero-link">
-              Open AI spend
-            </Link>
-            <Link href="/quickbooks" className="stripe-ui__hero-link">
-              Open QuickBooks
-            </Link>
           </div>
         </div>
       </section>

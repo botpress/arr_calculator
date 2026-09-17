@@ -4,7 +4,13 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 function shouldHide(pathname: string) {
-  return pathname === "/login" || pathname === "/privacy-policy" || pathname === "/eula";
+  return (
+    pathname === "/login" ||
+    pathname === "/privacy-policy" ||
+    pathname === "/eula" ||
+    pathname === "/tv" ||
+    pathname.startsWith("/tv/")
+  );
 }
 
 function formatMontrealTime(isoUtc: string) {
@@ -32,6 +38,8 @@ export default function HardRefreshButton() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAssignedAreaOnly, setIsAssignedAreaOnly] = useState(false);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [lastSyncAtUtc, setLastSyncAtUtc] = useState("");
   const [lastSyncSummary, setLastSyncSummary] = useState("");
   const [syncProgress, setSyncProgress] = useState("");
@@ -48,12 +56,20 @@ export default function HardRefreshButton() {
       try {
         const res = await fetch("/api/auth/session", { cache: "no-store" });
         if (!res.ok) return;
-        const payload = (await res.json()) as { user?: { role?: string } };
+        const payload = (await res.json()) as { user?: { role?: string; roles?: string[] } };
         if (!active) return;
-        setIsAdmin(String(payload?.user?.role || "").trim().toLowerCase() === "admin");
+        const roles = Array.isArray(payload?.user?.roles)
+          ? payload.user.roles.map((role) => String(role || "").trim().toLowerCase())
+          : [String(payload?.user?.role || "").trim().toLowerCase()];
+        const admin = roles.includes("admin");
+        setIsAdmin(admin);
+        setIsAssignedAreaOnly(!admin && !roles.includes("viewer"));
       } catch {
         if (!active) return;
         setIsAdmin(false);
+        setIsAssignedAreaOnly(true);
+      } finally {
+        if (active) setSessionLoaded(true);
       }
     };
     void loadSession();
@@ -89,7 +105,7 @@ export default function HardRefreshButton() {
     };
   }, []);
 
-  if (shouldHide(pathname)) return null;
+  if (shouldHide(pathname) || !sessionLoaded || isAssignedAreaOnly) return null;
 
   async function hardRefresh() {
     setLoading(true);
