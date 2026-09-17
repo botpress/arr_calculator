@@ -97,7 +97,7 @@ SELECT
   d.deal_id,
   d.deal_name,
   d.deal_workspace_id AS workspace_id,
-  d.deployment_type,
+  IF(d.pipeline_id = @transactional_pipeline, 'Cloud', d.deployment_type) AS deployment_type,
   'hubspot_carr' AS revenue_source
 FROM ${deals} d
 WHERE COALESCE(d.is_archived, FALSE) = FALSE
@@ -110,7 +110,7 @@ SELECT
   d.deal_id,
   d.deal_name,
   d.deal_workspace_id AS workspace_id,
-  d.deployment_type,
+  'Cloud' AS deployment_type,
   'stripe_arr' AS revenue_source
 FROM ${deals} d
 JOIN line_item_labels labels USING (deal_id)
@@ -141,7 +141,11 @@ inputs AS (
     d.deal_name,
     NULLIF(TRIM(d.primary_company_id), '') AS company_id,
     NULLIF(TRIM(d.deal_workspace_id), '') AS workspace_id,
-    NULLIF(TRIM(d.deployment_type), '') AS deployment_type,
+    IF(
+      d.pipeline_id = @transactional_pipeline,
+      'Cloud',
+      NULLIF(TRIM(d.deployment_type), '')
+    ) AS deployment_type,
     REGEXP_REPLACE(LOWER(COALESCE(d.dealtype, '')), r'[^a-z]', '') IN ('existingbusiness', 'upsell') AS is_existing_business,
     DATE(d.close_date) AS close_date,
     COALESCE(li.recurring_billing_start_date, li.billing_period_start_date) AS active_start,
