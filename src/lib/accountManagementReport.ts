@@ -429,9 +429,12 @@ export async function generateAccountManagementReport(
     );
   }
 
-  const teamCompanyIds = new Set(allAccounts.map((account) => account.companyId));
+  const teamOwnerIds = new Set(ACCOUNT_MANAGER_CONFIGS.map((owner) => owner.ownerId));
   const outsideDrafts = Array.from(revenueByCompany.entries())
-    .filter(([companyId, carr]) => carr.previousArr > 0 && !teamCompanyIds.has(companyId))
+    .filter(([companyId, carr]) => {
+      const ownerId = String(companiesById.get(companyId)?.csmOwnerId || "").trim();
+      return carr.previousArr > 0 && !teamOwnerIds.has(ownerId);
+    })
     .map(([companyId, carr]) => {
       const candidates = candidatesByCompany.get(companyId) || carrCandidatesByCompany.get(companyId) || [];
       const ownerId = String(companiesById.get(companyId)?.csmOwnerId || "").trim();
