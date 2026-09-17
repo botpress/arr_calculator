@@ -133,6 +133,10 @@ function deploymentLabel(cloudArr: number, legacyArr: number): "cloud" | "legacy
   return "none";
 }
 
+function hasArrAtEitherQuarterEnd(company: CompanyCarr) {
+  return round2(company.previousArr) !== 0 || round2(company.currentArr) !== 0;
+}
+
 export async function generateAccountManagementReport(
   request: AccountManagementReportRequest,
 ): Promise<AccountManagementReportResponse> {
@@ -321,21 +325,11 @@ export async function generateAccountManagementReport(
     revenueByCompany.set(companyId, classifyStripeCarr(companyId, stripeCarr));
     revenueSourceByCompany.set(companyId, "stripe_arr");
   }
-  const transactionCompaniesWithoutStripeArr = Array.from(stripeCarrByCompany.entries()).filter(
-    ([companyId, company]) =>
-      transactionalCandidatesByCompany.has(companyId) &&
-      !existingBusinessCompanyIds.has(companyId) &&
-      company.previousArr === 0 &&
-      company.currentArr === 0,
-  ).length;
-  if (transactionCompaniesWithoutStripeArr) {
-    warnings.add(
-      `${transactionCompaniesWithoutStripeArr} eligible Transactional Team compan${transactionCompaniesWithoutStripeArr === 1 ? "y has" : "ies have"} no Stripe ARR at either quarter end for ${transactionCompaniesWithoutStripeArr === 1 ? "its" : "their"} primary workspace ID.`,
-    );
-  }
   const zeroCarrCompaniesWithoutWorkspace = Array.from(carrByCompany.entries()).filter(
     ([companyId, company]) =>
-      (company.previousArr === 0 || company.currentArr === 0) && !stripeCarrByCompany.has(companyId),
+      hasArrAtEitherQuarterEnd(company) &&
+      (company.previousArr === 0 || company.currentArr === 0) &&
+      !stripeCarrByCompany.has(companyId),
   ).length;
   if (zeroCarrCompaniesWithoutWorkspace) {
     warnings.add(
@@ -344,10 +338,12 @@ export async function generateAccountManagementReport(
   }
 
   const companiesById = new Map(warehouse.companies.map((company) => [company.companyId, company]));
-  const retentionInputs = Array.from(revenueByCompany.entries()).map(([companyId, carr]) => ({
-    ...carr,
-    churnType: String(companiesById.get(companyId)?.churnType || "").trim(),
-  }));
+  const retentionInputs = Array.from(revenueByCompany.entries())
+    .filter(([, carr]) => hasArrAtEitherQuarterEnd(carr))
+    .map(([companyId, carr]) => ({
+      ...carr,
+      churnType: String(companiesById.get(companyId)?.churnType || "").trim(),
+    }));
   const allCompanies = calculateRetentionMetricsWithExclusions(retentionInputs);
   const exclusionReasons = retentionInputs.map(retentionExclusionReason);
   const excludedNewAccountChurnCount = exclusionReasons.filter((reason) => reason === "new_account_churn").length;
@@ -367,9 +363,10 @@ export async function generateAccountManagementReport(
   );
 
   for (const [companyId, candidates] of candidatesByCompany.entries()) {
+    const carr = revenueByCompany.get(companyId) || emptyCompanyCarr();
+    if (!hasArrAtEitherQuarterEnd(carr)) continue;
     const ownerId = String(companiesById.get(companyId)?.csmOwnerId || "").trim();
     if (!accountsByOwnerId.has(ownerId)) continue;
-    const carr = revenueByCompany.get(companyId) || emptyCompanyCarr();
     const companyName =
       String(companiesById.get(companyId)?.companyName || "").trim() ||
       carr.companyName ||
@@ -519,7 +516,7 @@ export async function generateAccountManagementReport(
       portfolioDealType:
         "All BigQuery-replicated HubSpot deals whose Deal Type is Existing Business, plus closed-won deals in the Transactional pipeline whose line items contain Team and do not contain Plus.",
       allCompaniesCohort:
-        "Company-wide NRR starts with every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. Legacy-only companies remain visible but are excluded from NRR. A company with legacy ARR in the prior snapshot and Cloud ARR in the current snapshot is included as a migration, using its full company ARR in both snapshots. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
+        "Company-wide NRR starts with every company with prior-quarter-end HubSpot CARR plus eligible Transactional Team companies measured from Stripe ARR, regardless of owner. Companies whose beginning and ending ARR are both zero are omitted. Legacy-only companies remain visible but are excluded from NRR. A company with legacy ARR in the prior snapshot and Cloud ARR in the current snapshot is included as a migration, using its full company ARR in both snapshots. For a Transactional Team company without an Existing Business portfolio deal, Stripe replaces any HubSpot CARR value so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
       outsideTeamCohort:
         "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
       ownerCohort: "Each company is assigned using the latest BigQuery-replicated value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",
