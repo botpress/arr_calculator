@@ -614,7 +614,11 @@ export async function batchReadDealPropertyHistory(dealIds: string[], propertyNa
 
   const url = `${HUBSPOT_BASE}/crm/v3/objects/deals/batch/read`;
   const chunks: string[][] = [];
-  for (let i = 0; i < missingIds.length; i += 100) chunks.push(missingIds.slice(i, i + 100));
+  // HubSpot caps batch reads that request property histories at 50 records.
+  const propertyHistoryBatchSize = 50;
+  for (let i = 0; i < missingIds.length; i += propertyHistoryBatchSize) {
+    chunks.push(missingIds.slice(i, i + propertyHistoryBatchSize));
+  }
 
   const chunkResults = await mapWithConcurrency(chunks, HUBSPOT_BATCH_READ_CONCURRENCY, async (chunk) => {
     const json = await hsFetch(url, {
