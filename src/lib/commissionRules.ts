@@ -462,11 +462,13 @@ export function calculateCommissionClawbacks(
     }
 
     const fullProtectionMs = fullyProtectedAt ? dateMs(fullyProtectedAt) : Number.POSITIVE_INFINITY;
+    const protectionExpiryMs = dateMs(protectedUntil);
+    const riskCutoffMs = Math.min(
+      fullProtectionMs,
+      Number.isFinite(protectionExpiryMs) ? protectionExpiryMs : Number.POSITIVE_INFINITY,
+    );
     const eligibleRisk = (risksByDeal.get(deal.dealId) || [])
-      .filter(
-        (event) =>
-          event.eventId.startsWith("deal-replacement:") || dateMs(event.occurredAt) < fullProtectionMs,
-      )
+      .filter((event) => dateMs(event.occurredAt) < riskCutoffMs)
       .sort((a, b) => dateMs(a.occurredAt) - dateMs(b.occurredAt) || a.eventId.localeCompare(b.eventId))[0];
 
     let paidBeforeRisk = 0;

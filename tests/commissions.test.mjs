@@ -252,15 +252,47 @@ test("a discount-only MRR decrease on the same plan is not a downgrade risk", ()
   assert.deepEqual(risks, []);
 });
 
-test("a late churn remains monitored until the first-three-month payment threshold is met", () => {
+test("a churn after the three-calendar-month window is ignored even when payment protection is incomplete", () => {
   const [result] = calculateCommissionClawbacks(
     [deal()],
     [{ paymentId: "inv-1", workspaceId: "workspace-1", paidDate: "2026-01-02T00:00:00.000Z", amount: 100 }],
     [{ eventId: "late-churn", workspaceId: "workspace-1", occurredAt: "2026-05-01T00:00:00.000Z", type: "churn" }],
   );
 
-  assert.equal(result.riskEventId, "late-churn");
-  assert.equal(result.clawback, 88);
+  assert.equal(result.protectedUntil, "2026-04-01T00:00:00.000Z");
+  assert.equal(result.riskEventId, "");
+  assert.equal(result.clawback, 0);
+});
+
+test("The Blue Space August cancellation is outside its fixed clawback window", () => {
+  const [result] = calculateCommissionClawbacks(
+    [deal({
+      dealId: "55636961463",
+      workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT",
+      closeDate: "2026-02-05T00:00:00.000Z",
+      effectiveStartDate: "2026-02-05T00:00:00.000Z",
+      dealAmount: 1068,
+      grossCommission: 85.44,
+    })],
+    [
+      { paymentId: "feb-proration", workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT", paidDate: "2026-02-05T00:00:00.000Z", amount: 76.29 },
+      { paymentId: "jun-partial", workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT", paidDate: "2026-06-01T00:00:00.000Z", amount: 35.86 },
+      { paymentId: "jul-full", workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT", paidDate: "2026-07-01T00:00:00.000Z", amount: 89 },
+      { paymentId: "aug-full", workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT", paidDate: "2026-08-01T00:00:00.000Z", amount: 89 },
+    ],
+    [{
+      eventId: "plus-ended",
+      workspaceId: "wkspace_01KGK15FPZCPGMRN29JC3HQSKT",
+      occurredAt: "2026-08-11T15:11:32.465Z",
+      type: "churn",
+    }],
+  );
+
+  assert.equal(result.monitoringStart, "2026-03-01T00:00:00.000Z");
+  assert.equal(result.protectedUntil, "2026-06-01T00:00:00.000Z");
+  assert.equal(result.fullyProtectedAt, "");
+  assert.equal(result.riskEventId, "");
+  assert.equal(result.clawback, 0);
 });
 
 test("commission payments exclude add-ons and AI tokens and use the refund-adjusted plan share", () => {

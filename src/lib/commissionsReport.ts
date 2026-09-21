@@ -1054,7 +1054,7 @@ export async function generateCommissionReport(request: CommissionReportRequest)
       existingBusinessOwners: includedExistingBusinessOwners,
       commissionRates: COMMISSION_RATES,
       clawbackRule:
-        "A churn or downgrade is assigned to one deal only. Stripe upgrades do not change commissions unless a qualifying replacement HubSpot deal exists; then the prior deal is retained only on its plan payments and the replacement deal is commissioned for the original contract's remaining months, with no overlap. Until Stripe shows full plan payments for the first three eligible months, commission is retained only on plan payments net of refunds; for mid-month starts, the prorated opening month does not advance the three-month clock, which begins on the next 1st.",
+        "A churn or downgrade is assigned to one deal only. Stripe upgrades do not change commissions unless a qualifying replacement HubSpot deal exists; then the prior deal is retained only on its plan payments and the replacement deal is commissioned for the original contract's remaining months, with no overlap. The clawback window closes after three calendar months, or earlier once Stripe shows full plan payments for the first three eligible months. Commission at risk is retained only on plan payments net of refunds; for mid-month starts, the prorated opening month does not advance the clock, which begins on the next 1st.",
       paymentSource:
         "botpress-stripe-data-pipeline.stripe BigQuery tables (stripe_arr_correct profile; plan lines only, net of refunds)",
     },
