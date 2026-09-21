@@ -58,6 +58,7 @@ export type CommissionStripePlanEventInput = {
   eventId: string;
   customerId: string;
   subscriptionId: string;
+  priceId: string;
   occurredAt: string;
   eventType: string;
   mrrChange: number;
@@ -193,14 +194,32 @@ export function deriveCommissionRisksFromStripePlanEvents(
       });
       if (!candidates.length) continue;
 
-      const hasReplacementStart = cluster.some((event) => {
+      const replacementStarts = cluster.filter((event) => {
         const type = String(event.eventType || "").trim().toUpperCase();
         return (type === "ACTIVE_START" || type === "ACTIVE_UPGRADE") && Number(event.mrrChange || 0) > 0;
       });
+      const hasReplacementStart = replacementStarts.length > 0;
       const netMrrChange = cluster.reduce((sum, event) => sum + Number(event.mrrChange || 0), 0);
       // A net-positive Stripe plan transition is an upgrade signal, not a clawback by itself.
       // It is handled only when a qualifying replacement HubSpot deal exists.
       if (hasReplacementStart && netMrrChange >= 0) continue;
+
+      const hasPlanPriceReplacement = candidates.some((candidate) => {
+        const oldPriceId = String(candidate.priceId || "").trim();
+        if (!oldPriceId) return false;
+        return replacementStarts.some((replacement) => {
+          const newPriceId = String(replacement.priceId || "").trim();
+          return Boolean(newPriceId && newPriceId !== oldPriceId);
+        });
+      });
+
+      // Stripe also emits ACTIVE_DOWNGRADE when a discount lowers the MRR of an
+      // otherwise unchanged subscription item. Only a different recurring price
+      // proves that the customer actually moved to another plan.
+      const hasStandaloneEnd = candidates.some(
+        (event) => String(event.eventType || "").trim().toUpperCase() === "ACTIVE_END",
+      ) && !hasReplacementStart;
+      if (!hasPlanPriceReplacement && !hasStandaloneEnd) continue;
 
       const chosen =
         candidates.find((event) => String(event.eventType || "").trim().toUpperCase() === "ACTIVE_DOWNGRADE") ||
@@ -209,11 +228,7 @@ export function deriveCommissionRisksFromStripePlanEvents(
         eventId: chosen.eventId,
         customerId: chosen.customerId,
         occurredAt: chosen.occurredAt,
-        type: candidates.some(
-          (event) => String(event.eventType || "").trim().toUpperCase() === "ACTIVE_DOWNGRADE",
-        )
-          ? "downgrade"
-          : "churn",
+        type: hasPlanPriceReplacement ? "downgrade" : "churn",
       });
     }
   }

@@ -538,6 +538,7 @@ SELECT DISTINCT
   UPPER(CAST(event_type AS STRING)) AS event_type,
   CAST(mrr_change AS FLOAT64) AS mrr_change,
   subscription_id,
+  price_id,
   COALESCE(
     NULLIF(TRIM(event_price_description), ''),
     NULLIF(TRIM(CAST(price_row.nickname AS STRING)), ''),
@@ -630,6 +631,7 @@ ORDER BY occurred_at ASC, event_id ASC`;
         eventId: String(row.event_id || ""),
         customerId: String(row.customer_id || ""),
         subscriptionId: String(row.subscription_id || ""),
+        priceId: String(row.price_id || ""),
         occurredAt: String(row.occurred_at || ""),
         eventType: String(row.event_type || "").toUpperCase(),
         mrrChange: Number(row.mrr_change || 0),

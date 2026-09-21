@@ -182,6 +182,7 @@ test("Magicplan net-positive Stripe transition is not a clawback without its Hub
       eventId: "plus-down",
       customerId,
       subscriptionId,
+      priceId: "price-plus",
       occurredAt: "2026-06-08T16:32:36.141Z",
       eventType: "ACTIVE_DOWNGRADE",
       mrrChange: -8900,
@@ -190,6 +191,7 @@ test("Magicplan net-positive Stripe transition is not a clawback without its Hub
       eventId: "team-start",
       customerId,
       subscriptionId,
+      priceId: "price-team",
       occurredAt: "2026-06-08T16:32:36.141Z",
       eventType: "ACTIVE_START",
       mrrChange: 49500,
@@ -198,6 +200,7 @@ test("Magicplan net-positive Stripe transition is not a clawback without its Hub
       eventId: "plus-end",
       customerId,
       subscriptionId,
+      priceId: "price-plus",
       occurredAt: "2026-06-08T16:32:39.539Z",
       eventType: "ACTIVE_END",
       mrrChange: 0,
@@ -213,6 +216,7 @@ test("a net-negative Stripe plan replacement remains a downgrade risk", () => {
       eventId: "team-down",
       customerId: "customer-1",
       subscriptionId: "subscription-1",
+      priceId: "price-team",
       occurredAt: "2026-02-15T12:00:00.000Z",
       eventType: "ACTIVE_DOWNGRADE",
       mrrChange: -49500,
@@ -221,6 +225,7 @@ test("a net-negative Stripe plan replacement remains a downgrade risk", () => {
       eventId: "plus-start",
       customerId: "customer-1",
       subscriptionId: "subscription-1",
+      priceId: "price-plus",
       occurredAt: "2026-02-15T12:00:00.000Z",
       eventType: "ACTIVE_START",
       mrrChange: 8900,
@@ -229,6 +234,22 @@ test("a net-negative Stripe plan replacement remains a downgrade risk", () => {
 
   assert.equal(risks.length, 1);
   assert.equal(risks[0].type, "downgrade");
+});
+
+test("a discount-only MRR decrease on the same plan is not a downgrade risk", () => {
+  const risks = deriveCommissionRisksFromStripePlanEvents([
+    {
+      eventId: "plus-discount",
+      customerId: "cus_UsuNWm8CPr0NvV",
+      subscriptionId: "sub_1TyJZHKDjVRgNn7vx8T1TbFR",
+      priceId: "price_1TUtiSKDjVRgNn7vfxvc0bxo",
+      occurredAt: "2026-08-01T01:16:14.358Z",
+      eventType: "ACTIVE_DOWNGRADE",
+      mrrChange: -1890,
+    },
+  ]);
+
+  assert.deepEqual(risks, []);
 });
 
 test("a late churn remains monitored until the first-three-month payment threshold is met", () => {
