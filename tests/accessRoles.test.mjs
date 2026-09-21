@@ -84,16 +84,19 @@ test("restricts sales users to the commissions page and API", () => {
   assert.equal(isSalesAllowedApplicationPath("/commissions-other"), false);
 });
 
-test("restricts account management users to the migration page and API", () => {
+test("restricts account management users to the account management and migration pages and APIs", () => {
+  assert.equal(isAccountManagementAllowedApplicationPath("/account-management"), true);
+  assert.equal(isAccountManagementAllowedApplicationPath("/account-management/details"), true);
+  assert.equal(isAccountManagementAllowedApplicationPath("/api/account-management"), true);
+  assert.equal(isAccountManagementAllowedApplicationPath("/api/account-management/export"), true);
   assert.equal(isAccountManagementAllowedApplicationPath("/migration"), true);
   assert.equal(isAccountManagementAllowedApplicationPath("/migration/details"), true);
   assert.equal(isAccountManagementAllowedApplicationPath("/api/migration"), true);
   assert.equal(isAccountManagementAllowedApplicationPath("/api/migration/export"), true);
 
   assert.equal(isAccountManagementAllowedApplicationPath("/"), false);
-  assert.equal(isAccountManagementAllowedApplicationPath("/account-management"), false);
   assert.equal(isAccountManagementAllowedApplicationPath("/commissions"), false);
-  assert.equal(isAccountManagementAllowedApplicationPath("/api/account-management"), false);
+  assert.equal(isAccountManagementAllowedApplicationPath("/account-management-other"), false);
   assert.equal(isAccountManagementAllowedApplicationPath("/migration-other"), false);
 });
 

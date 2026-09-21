@@ -92,6 +92,10 @@ export function isSalesAllowedApplicationPath(pathname: string) {
 export function isAccountManagementAllowedApplicationPath(pathname: string) {
   const normalized = String(pathname || "").trim();
   return (
+    normalized === "/account-management" ||
+    normalized.startsWith("/account-management/") ||
+    normalized === "/api/account-management" ||
+    normalized.startsWith("/api/account-management/") ||
     normalized === "/migration" ||
     normalized.startsWith("/migration/") ||
     normalized === "/api/migration" ||

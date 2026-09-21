@@ -101,7 +101,10 @@ export default function AppNavigation() {
     } else if (roles.includes("account_management")) {
       nextGroups.push({
         label: "Operations",
-        items: [{ href: "/migration", label: "Pricing migration" }],
+        items: [
+          { href: "/account-management", label: "Account management" },
+          { href: "/migration", label: "Pricing migration" },
+        ],
       });
     }
 

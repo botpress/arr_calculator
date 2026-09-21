@@ -150,7 +150,7 @@ export default async function AccessControlPage(props: { searchParams: AccessCon
       <section className="stripe-ui__panel ui-reveal ui-reveal-1">
         <h2 className="stripe-ui__panel-title">Add Access Email</h2>
         <p className="stripe-ui__panel-subtitle">
-          Assign one or more roles. Viewer grants the standard dashboards, Sales grants Commissions, Account Management grants Migration, GTM grants the GTM scorecard, and Admin grants everything.
+          Assign one or more roles. Viewer grants the standard dashboards, Sales grants Commissions, Account Management grants the Account Management and Migration dashboards, GTM grants the GTM scorecard, and Admin grants everything.
         </p>
         {updated ? (
           <p style={{ color: "#166534", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "10px 12px" }}>
