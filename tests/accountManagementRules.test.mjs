@@ -6,12 +6,57 @@ import {
   calculateRetentionMetricsWithExclusions,
   companyCsmOwnerId,
   fillZeroArrFromStripe,
+  isAccountManagementBaselineEligible,
+  isManagedAccountPlan,
   isTransactionalTeamPlan,
   isExcludedNewAccountChurn,
   isExcludedLegacyAccount,
   retentionExclusionReason,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
+
+test("admits only baseline managed plans when Stripe measures the account", () => {
+  assert.equal(isManagedAccountPlan("Team"), true);
+  assert.equal(isManagedAccountPlan("managed"), true);
+  assert.equal(isManagedAccountPlan("enterprise"), true);
+  assert.equal(isManagedAccountPlan("plus"), false);
+  assert.equal(
+    isAccountManagementBaselineEligible({
+      previousArr: 1068,
+      previousCloudArr: 1068,
+      stripeMeasuredAtBaseline: true,
+      stripeBaselinePlans: ["plus"],
+    }),
+    false,
+  );
+  assert.equal(
+    isAccountManagementBaselineEligible({
+      previousArr: 5940,
+      previousCloudArr: 5940,
+      stripeMeasuredAtBaseline: true,
+      stripeBaselinePlans: ["team"],
+    }),
+    true,
+  );
+  assert.equal(
+    isAccountManagementBaselineEligible({
+      previousArr: 25000,
+      previousCloudArr: 25000,
+      stripeMeasuredAtBaseline: false,
+      stripeBaselinePlans: [],
+    }),
+    true,
+  );
+  assert.equal(
+    isAccountManagementBaselineEligible({
+      previousArr: 25000,
+      previousCloudArr: 0,
+      stripeMeasuredAtBaseline: false,
+      stripeBaselinePlans: [],
+    }),
+    false,
+  );
+});
 
 test("assigns ownership from the company CSM owner field, not the deal owner field", () => {
   assert.equal(companyCsmOwnerId({ csm_owner: " 1314508841 ", hubspot_owner_id: "84747686" }), "1314508841");

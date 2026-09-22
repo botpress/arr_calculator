@@ -148,7 +148,15 @@ inputs AS (
     ) AS deployment_type,
     REGEXP_REPLACE(LOWER(COALESCE(d.dealtype, '')), r'[^a-z]', '') IN ('existingbusiness', 'upsell') AS is_existing_business,
     DATE(d.close_date) AS close_date,
-    COALESCE(li.recurring_billing_start_date, li.billing_period_start_date) AS active_start,
+    CASE
+      WHEN REGEXP_REPLACE(LOWER(COALESCE(d.dealtype, '')), r'[^a-z]', '') = 'existingbusiness'
+        AND DATE(d.close_date) IS NOT NULL
+      THEN GREATEST(
+        COALESCE(li.recurring_billing_start_date, li.billing_period_start_date),
+        DATE(d.close_date)
+      )
+      ELSE COALESCE(li.recurring_billing_start_date, li.billing_period_start_date)
+    END AS active_start,
     COALESCE(li.recurring_billing_end_date, li.billing_period_end_date) AS explicit_end,
     li.term_in_months,
     li.recurring_billing_frequency,

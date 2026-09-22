@@ -81,6 +81,23 @@ export function isTransactionalTeamPlan(values: unknown[]) {
   return hasTeam && !hasPlus;
 }
 
+const ACCOUNT_MANAGEMENT_PLANS = new Set(["team", "managed", "enterprise"]);
+
+export function isManagedAccountPlan(value: unknown) {
+  return ACCOUNT_MANAGEMENT_PLANS.has(String(value || "").trim().toLowerCase());
+}
+
+export function isAccountManagementBaselineEligible(input: {
+  previousArr: number;
+  previousCloudArr: number;
+  stripeMeasuredAtBaseline: boolean;
+  stripeBaselinePlans?: unknown[];
+}) {
+  if (Number(input.previousArr || 0) <= 0 || Number(input.previousCloudArr || 0) <= 0) return false;
+  if (!input.stripeMeasuredAtBaseline) return true;
+  return (input.stripeBaselinePlans || []).some(isManagedAccountPlan);
+}
+
 function ownerIdFromEnv(name: string, fallback: string) {
   return String(process.env[name] || fallback).trim() || fallback;
 }
