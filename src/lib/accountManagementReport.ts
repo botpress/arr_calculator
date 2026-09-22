@@ -119,6 +119,9 @@ function dealUrl(portalId: string, dealId: string) {
 }
 
 function companyUrl(portalId: string, companyId: string) {
+  if (companyId.startsWith("stripe:")) {
+    return `https://dashboard.stripe.com/customers/${encodeURIComponent(companyId.slice("stripe:".length))}`;
+  }
   return `https://app.hubspot.com/contacts/${portalId}/record/0-2/${companyId}?utm_source=arr_dashboard&utm_medium=internal&utm_campaign=account_management`;
 }
 
@@ -229,19 +232,18 @@ export async function generateAccountManagementReport(
   const stripeBaselinePlansByCompany = new Map<string, Set<string>>();
   const earlyLifecycleActivityCompanyIds = new Set<string>();
   const openingBoundaryRefundCompanyIds = new Set<string>();
+  const stripeOnlyCompanyIdByCustomerKey = new Map<string, string>();
   for (const companyIds of companyIdsByWorkspaceId.values()) {
     for (const companyId of companyIds) {
       stripeCarrByCompany.set(companyId, emptyCompanyCarr());
     }
   }
-  if (companyIdsByWorkspaceId.size) {
-    const [
-      stripeOpeningArr,
-      stripeCurrentArr,
-      stripeOpeningPlans,
-      earlyLifecycleActivity,
-      openingBoundaryRefunds,
-    ] = await Promise.all([
+  {
+    const linkedWorkspaceIds = new Set([
+      ...companyIdsByWorkspaceId.keys(),
+      ...warehouse.hubspotDealWorkspaceIds.map(normalizeWorkspaceId),
+    ]);
+    const [stripeOpeningArr, stripeCurrentArr, stripeOpeningPlans] = await Promise.all([
       queryStripeThroughMrrCustomerArrFromBigQuery(
         {
           startDate: window.openingSnapshotDate,
@@ -271,25 +273,64 @@ export async function generateAccountManagementReport(
         },
         { profile: "stripe_arr_correct" },
       ),
-      queryStripeManagedEarlyLifecycleActivityFromBigQuery(
-        {
-          workspaceIds: Array.from(companyIdsByWorkspaceId.keys()),
-          activityStartDate: window.currentQuarterActivityStart,
-          activityEndDate: window.currentQuarterEnd,
-          targetCurrency: FX_TARGET_CURRENCY,
-          maxAgeDays: 90,
-        },
-        { profile: "stripe_arr_correct" },
-      ),
-      queryStripeOpeningBoundaryRefundsFromBigQuery(
-        {
-          workspaceIds: Array.from(companyIdsByWorkspaceId.keys()),
-          openingSnapshotDate: window.openingSnapshotDate,
-          targetCurrency: FX_TARGET_CURRENCY,
-        },
-        { profile: "stripe_arr_correct" },
-      ),
     ]);
+
+    for (const row of stripeOpeningPlans.rows) {
+      if (row.periodKey !== window.openingSnapshotDate || row.plan !== "team" || Number(row.arr || 0) <= 0) continue;
+      const isAlreadyDealLinked = row.workspaceIds.some((workspaceId) =>
+        linkedWorkspaceIds.has(normalizeWorkspaceId(workspaceId)),
+      );
+      if (isAlreadyDealLinked || stripeOnlyCompanyIdByCustomerKey.has(row.customerKey)) continue;
+      const customerId = row.customerIds[0] || row.customerKey;
+      if (!customerId) continue;
+      const companyId = `stripe:${customerId}`;
+      const companyName = row.customerKey && row.customerKey !== customerId
+        ? row.customerKey
+        : `Stripe customer ${customerId}`;
+      stripeOnlyCompanyIdByCustomerKey.set(row.customerKey, companyId);
+      stripeCarrByCompany.set(companyId, emptyCompanyCarr(companyName));
+      transactionalCandidatesByCompany.set(companyId, [{
+        companyId,
+        dealId: "",
+        dealName: "",
+        revenueSource: "stripe_arr",
+        workspaceId: normalizeWorkspaceId(row.workspaceIds[0]),
+        deploymentType: "Cloud",
+      }]);
+      for (const workspaceId of row.workspaceIds.map(normalizeWorkspaceId).filter(Boolean)) {
+        if (!companyIdsByWorkspaceId.has(workspaceId)) companyIdsByWorkspaceId.set(workspaceId, new Set());
+        companyIdsByWorkspaceId.get(workspaceId)!.add(companyId);
+      }
+    }
+    if (stripeOnlyCompanyIdByCustomerKey.size) {
+      warnings.add(
+        `${stripeOnlyCompanyIdByCustomerKey.size} Stripe-only Team account${stripeOnlyCompanyIdByCustomerKey.size === 1 ? " was" : "s were"} added to the opening cohort because no HubSpot deal was associated.`,
+      );
+    }
+
+    const workspaceIds = Array.from(companyIdsByWorkspaceId.keys());
+    const [earlyLifecycleActivity, openingBoundaryRefunds] = workspaceIds.length
+      ? await Promise.all([
+        queryStripeManagedEarlyLifecycleActivityFromBigQuery(
+          {
+            workspaceIds,
+            activityStartDate: window.currentQuarterActivityStart,
+            activityEndDate: window.currentQuarterEnd,
+            targetCurrency: FX_TARGET_CURRENCY,
+            maxAgeDays: 90,
+          },
+          { profile: "stripe_arr_correct" },
+        ),
+        queryStripeOpeningBoundaryRefundsFromBigQuery(
+          {
+            workspaceIds,
+            openingSnapshotDate: window.openingSnapshotDate,
+            targetCurrency: FX_TARGET_CURRENCY,
+          },
+          { profile: "stripe_arr_correct" },
+        ),
+      ])
+      : [{ rows: [] }, { rows: [] }];
     const openingManagedCustomerIds = new Set(
       stripeOpeningPlans.rows
         .filter((row) => row.periodKey === window.openingSnapshotDate && isManagedAccountPlan(row.plan))
@@ -316,6 +357,8 @@ export async function generateAccountManagementReport(
           ),
         ),
       ).sort();
+      const stripeOnlyCompanyId = stripeOnlyCompanyIdByCustomerKey.get(row.customerKey);
+      if (!matchingCompanyIds.length && stripeOnlyCompanyId) matchingCompanyIds.push(stripeOnlyCompanyId);
       if (!matchingCompanyIds.length) continue;
       if (matchingCompanyIds.length > 1) ambiguousStripeCustomerCount += 1;
       const company = stripeCarrByCompany.get(matchingCompanyIds[0]);
@@ -338,6 +381,8 @@ export async function generateAccountManagementReport(
           ),
         ),
       ).sort();
+      const stripeOnlyCompanyId = stripeOnlyCompanyIdByCustomerKey.get(row.customerKey);
+      if (!matchingCompanyIds.length && stripeOnlyCompanyId) matchingCompanyIds.push(stripeOnlyCompanyId);
       if (!matchingCompanyIds.length) continue;
       const companyId = matchingCompanyIds[0];
       if (!stripeBaselinePlansByCompany.has(companyId)) stripeBaselinePlansByCompany.set(companyId, new Set());
@@ -513,13 +558,14 @@ export async function generateAccountManagementReport(
       earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
     });
     const excludedFromNrr = exclusionReason !== null;
-    const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
+    const dealCandidates = candidates.filter((candidate) => candidate.dealId);
+    const portfolioDealIds = dealCandidates.map((candidate) => candidate.dealId);
     accountsByOwnerId.get(ownerId)!.push({
       companyId,
       companyName,
       companyUrl: companyUrl(portalId, companyId),
       portfolioDealIds,
-      portfolioDealNames: candidates.map((candidate) => candidate.dealName),
+      portfolioDealNames: dealCandidates.map((candidate) => candidate.dealName),
       portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
       churnType,
       earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
@@ -590,7 +636,8 @@ export async function generateAccountManagementReport(
         earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
       });
       const excludedFromNrr = exclusionReason !== null;
-      const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
+      const dealCandidates = candidates.filter((candidate) => candidate.dealId);
+      const portfolioDealIds = dealCandidates.map((candidate) => candidate.dealId);
       const revenueSource: AccountManagementAccountRow["revenueSource"] =
         revenueSourceByCompany.get(companyId) || "hubspot_carr";
       return {
@@ -600,7 +647,7 @@ export async function generateAccountManagementReport(
         ownerId,
         ownerName: String(companiesById.get(companyId)?.ownerName || "").trim() || (ownerId ? `Owner ${ownerId}` : "Unassigned"),
         portfolioDealIds,
-        portfolioDealNames: candidates.map((candidate) => candidate.dealName),
+        portfolioDealNames: dealCandidates.map((candidate) => candidate.dealName),
         portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
         churnType,
         earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
@@ -653,7 +700,7 @@ export async function generateAccountManagementReport(
       portfolioDealType:
         "The opening-day Cloud book, measured at the end of the first calendar day of the selected quarter so month-end churn and downgrade processing is attributed to the prior quarter. Stripe-measured accounts must be on Team, Managed, or Enterprise on that opening snapshot; Plus, PAYG, Free, and later upgrades enter the book in the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their opening ARR is measured from HubSpot.",
       allCompaniesCohort:
-        "Company-wide NRR is the opening-day Cloud managed-account cohort, regardless of owner. Stripe-measured accounts must have Team, Managed, or Enterprise ARR on the first-day snapshot; Plus, PAYG, Free, and accounts first upgraded later in the selected quarter are omitted until the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their opening ARR is measured from HubSpot. For a Transactional managed-plan company without an Existing Business portfolio deal, Stripe replaces HubSpot CARR so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
+        "Company-wide NRR is the opening-day Cloud managed-account cohort, regardless of owner. Stripe-only customers on Team are included even when no HubSpot deal is associated; they appear outside the AM team unless a HubSpot company owner can be resolved. Stripe-measured accounts must have Team, Managed, or Enterprise ARR on the first-day snapshot; Plus, PAYG, Free, and accounts first upgraded later in the selected quarter are omitted until the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their opening ARR is measured from HubSpot. For a Transactional managed-plan company without an Existing Business portfolio deal, Stripe replaces HubSpot CARR so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
       outsideTeamCohort:
         "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
       ownerCohort: "Each company is assigned using the latest BigQuery-replicated value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",

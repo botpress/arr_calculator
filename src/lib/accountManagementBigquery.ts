@@ -57,6 +57,7 @@ export type AccountManagementWarehouseData = {
   carrCandidates: AccountManagementWarehouseCandidate[];
   carrByCompany: AccountManagementWarehouseCarr[];
   companies: AccountManagementWarehouseCompany[];
+  hubspotDealWorkspaceIds: string[];
 };
 
 export async function queryAccountManagementWarehouseData(input: {
@@ -315,11 +316,21 @@ JOIN companies c USING (company_id)
 LEFT JOIN owners o ON o.owner_id = c.csm_owner_id
 `, params, { profile: PROFILE });
 
-  const [portfolioRows, carrRows, carrCandidateRows, companyRows] = await Promise.all([
+  const dealWorkspaceIdsPromise = runBigQuerySqlRows(
+    `
+SELECT DISTINCT LOWER(TRIM(deal_workspace_id)) AS workspace_id
+FROM ${deals}
+WHERE COALESCE(is_archived, FALSE) = FALSE
+  AND NULLIF(TRIM(deal_workspace_id), '') IS NOT NULL
+ORDER BY workspace_id
+`, [], { profile: PROFILE });
+
+  const [portfolioRows, carrRows, carrCandidateRows, companyRows, dealWorkspaceIdRows] = await Promise.all([
     portfolioPromise,
     carrPromise,
     carrCandidatesPromise,
     companiesPromise,
+    dealWorkspaceIdsPromise,
   ]);
 
   const mapCandidate = (row: Record<string, unknown>): AccountManagementWarehouseCandidate => ({
@@ -351,5 +362,6 @@ LEFT JOIN owners o ON o.owner_id = c.csm_owner_id
       churnType: text(row.churn_type),
       ownerName: text(row.owner_name),
     })),
+    hubspotDealWorkspaceIds: dealWorkspaceIdRows.map((row) => text(row.workspace_id).toLowerCase()).filter(Boolean),
   };
 }

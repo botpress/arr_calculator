@@ -203,7 +203,11 @@ function OwnerSection({
                     <a href={account.companyUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
                       {account.companyName}
                     </a>
-                    <div className="account-management__muted">Company {account.companyId}</div>
+                    <div className="account-management__muted">
+                      {account.companyId.startsWith("stripe:")
+                        ? `Stripe customer ${account.companyId.slice("stripe:".length)}`
+                        : `Company ${account.companyId}`}
+                    </div>
                   </td>
                   <td>
                     <div className="account-management__deals">
@@ -468,7 +472,11 @@ export default function AccountManagementPage() {
                         <a href={account.companyUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
                           {account.companyName}
                         </a>
-                        <div className="account-management__muted">Company {account.companyId}</div>
+                        <div className="account-management__muted">
+                          {account.companyId.startsWith("stripe:")
+                            ? `Stripe customer ${account.companyId.slice("stripe:".length)}`
+                            : `Company ${account.companyId}`}
+                        </div>
                       </td>
                       <td>
                         <strong>{account.ownerName}</strong>
