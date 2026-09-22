@@ -150,6 +150,7 @@ export function accountManagementQuarterWindow(quarter: string) {
   const currentStartMonth = 3 + quarterIndex * 3;
 
   const currentStart = new Date(Date.UTC(fiscalStartYear, currentStartMonth, 1));
+  const currentActivityStart = new Date(currentStart.getTime() + 24 * 60 * 60 * 1000);
   const currentEnd = new Date(Date.UTC(fiscalStartYear, currentStartMonth + 3, 0));
   const previousEnd = new Date(Date.UTC(fiscalStartYear, currentStartMonth, 0));
 
@@ -160,6 +161,8 @@ export function accountManagementQuarterWindow(quarter: string) {
     previousPeriodMonthKey: isoDate(previousEnd).slice(0, 7),
     currentPeriodMonthKey: isoDate(currentEnd).slice(0, 7),
     currentQuarterStart: isoDate(currentStart),
+    openingSnapshotDate: isoDate(currentStart),
+    currentQuarterActivityStart: isoDate(currentActivityStart),
     previousQuarterEnd: isoDate(previousEnd),
     currentQuarterEnd: isoDate(currentEnd),
     ownerCutoffIso: `${isoDate(previousEnd)}T23:59:59.999Z`,

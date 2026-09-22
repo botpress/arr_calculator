@@ -4,6 +4,7 @@ import {
   calculateRetentionMetricsWithExclusions,
   fillZeroArrFromStripe,
   isAccountManagementBaselineEligible,
+  isManagedAccountPlan,
   retentionExclusionReason,
   retentionMovement,
   type RetentionMetrics,
@@ -14,6 +15,7 @@ import { queryAccountManagementWarehouseData } from "@/lib/accountManagementBigq
 import { FX_TARGET_CURRENCY, round2 } from "@/lib/logic";
 import {
   queryStripeManagedEarlyLifecycleActivityFromBigQuery,
+  queryStripeOpeningBoundaryRefundsFromBigQuery,
   queryStripeThroughMrrCustomerArrFromBigQuery,
   queryStripeThroughMrrCustomerPlanFromBigQuery,
 } from "@/lib/stripeBigquery";
@@ -150,7 +152,7 @@ export async function generateAccountManagementReport(
   const portalId = String(process.env.HUBSPOT_PORTAL_ID || "20692578").trim() || "20692578";
   const warnings = new Set<string>();
   const warehouse = await queryAccountManagementWarehouseData({
-    previousQuarterEnd: window.previousQuarterEnd,
+    openingSnapshotDate: window.openingSnapshotDate,
     currentQuarterEnd: window.currentQuarterEnd,
     targetCurrency: FX_TARGET_CURRENCY,
   });
@@ -226,46 +228,87 @@ export async function generateAccountManagementReport(
   const stripeCarrByCompany = new Map<string, CompanyCarr>();
   const stripeBaselinePlansByCompany = new Map<string, Set<string>>();
   const earlyLifecycleActivityCompanyIds = new Set<string>();
+  const openingBoundaryRefundCompanyIds = new Set<string>();
   for (const companyIds of companyIdsByWorkspaceId.values()) {
     for (const companyId of companyIds) {
       stripeCarrByCompany.set(companyId, emptyCompanyCarr());
     }
   }
   if (companyIdsByWorkspaceId.size) {
-    const [stripeArr, stripePlans, earlyLifecycleActivity] = await Promise.all([
+    const [
+      stripeOpeningArr,
+      stripeCurrentArr,
+      stripeOpeningPlans,
+      earlyLifecycleActivity,
+      openingBoundaryRefunds,
+    ] = await Promise.all([
       queryStripeThroughMrrCustomerArrFromBigQuery(
         {
-          startDate: window.previousQuarterEnd,
+          startDate: window.openingSnapshotDate,
+          endDate: window.openingSnapshotDate,
+          targetCurrency: FX_TARGET_CURRENCY,
+          grain: "daily",
+          baseSubscriptionOnly: true,
+        },
+        { profile: "stripe_arr_correct" },
+      ),
+      queryStripeThroughMrrCustomerArrFromBigQuery(
+        {
+          startDate: window.currentQuarterEnd,
           endDate: window.currentQuarterEnd,
           targetCurrency: FX_TARGET_CURRENCY,
-          grain: "monthly",
+          grain: "daily",
           baseSubscriptionOnly: true,
         },
         { profile: "stripe_arr_correct" },
       ),
       queryStripeThroughMrrCustomerPlanFromBigQuery(
         {
-          startDate: window.previousQuarterEnd,
-          endDate: window.currentQuarterEnd,
+          startDate: window.openingSnapshotDate,
+          endDate: window.openingSnapshotDate,
           targetCurrency: FX_TARGET_CURRENCY,
-          grain: "monthly",
+          grain: "daily",
         },
         { profile: "stripe_arr_correct" },
       ),
       queryStripeManagedEarlyLifecycleActivityFromBigQuery(
         {
           workspaceIds: Array.from(companyIdsByWorkspaceId.keys()),
-          activityStartDate: window.currentQuarterStart,
+          activityStartDate: window.currentQuarterActivityStart,
           activityEndDate: window.currentQuarterEnd,
           targetCurrency: FX_TARGET_CURRENCY,
           maxAgeDays: 90,
         },
         { profile: "stripe_arr_correct" },
       ),
+      queryStripeOpeningBoundaryRefundsFromBigQuery(
+        {
+          workspaceIds: Array.from(companyIdsByWorkspaceId.keys()),
+          openingSnapshotDate: window.openingSnapshotDate,
+          targetCurrency: FX_TARGET_CURRENCY,
+        },
+        { profile: "stripe_arr_correct" },
+      ),
     ]);
+    const openingManagedCustomerIds = new Set(
+      stripeOpeningPlans.rows
+        .filter((row) => row.periodKey === window.openingSnapshotDate && isManagedAccountPlan(row.plan))
+        .flatMap((row) => row.customerIds),
+    );
+    const qualifyingOpeningBoundaryRefunds = openingBoundaryRefunds.rows.filter((row) =>
+      openingManagedCustomerIds.has(row.customerId),
+    );
+    const openingBoundaryRefundCustomerIds = new Set(
+      qualifyingOpeningBoundaryRefunds.map((row) => row.customerId),
+    );
+    for (const row of qualifyingOpeningBoundaryRefunds) {
+      for (const companyId of companyIdsByWorkspaceId.get(normalizeWorkspaceId(row.workspaceId)) || []) {
+        openingBoundaryRefundCompanyIds.add(companyId);
+      }
+    }
     let ambiguousStripeCustomerCount = 0;
-    for (const row of stripeArr.rows) {
-      if (row.periodKey !== window.previousPeriodMonthKey && row.periodKey !== window.currentPeriodMonthKey) continue;
+    for (const row of [...stripeOpeningArr.rows, ...stripeCurrentArr.rows]) {
+      if (row.periodKey !== window.openingSnapshotDate && row.periodKey !== window.currentQuarterEnd) continue;
       const matchingCompanyIds = Array.from(
         new Set(
           row.workspaceIds.flatMap((workspaceId) =>
@@ -277,15 +320,17 @@ export async function generateAccountManagementReport(
       if (matchingCompanyIds.length > 1) ambiguousStripeCustomerCount += 1;
       const company = stripeCarrByCompany.get(matchingCompanyIds[0]);
       if (!company) continue;
-      if (row.periodKey === window.previousPeriodMonthKey) {
+      if (row.periodKey === window.openingSnapshotDate) {
+        if (row.customerIds.some((customerId) => openingBoundaryRefundCustomerIds.has(customerId))) continue;
         company.previousArr = round2(company.previousArr + Number(row.arr || 0));
       }
-      if (row.periodKey === window.currentPeriodMonthKey) {
+      if (row.periodKey === window.currentQuarterEnd) {
         company.currentArr = round2(company.currentArr + Number(row.arr || 0));
       }
     }
-    for (const row of stripePlans.rows) {
-      if (row.periodKey !== window.previousPeriodMonthKey) continue;
+    for (const row of stripeOpeningPlans.rows) {
+      if (row.periodKey !== window.openingSnapshotDate) continue;
+      if (row.customerIds.some((customerId) => openingBoundaryRefundCustomerIds.has(customerId))) continue;
       const matchingCompanyIds = Array.from(
         new Set(
           row.workspaceIds.flatMap((workspaceId) =>
@@ -376,6 +421,12 @@ export async function generateAccountManagementReport(
   const eligibleCompanyIds = new Set(
     Array.from(revenueByCompany.entries())
       .filter(([companyId, carr]) => {
+        if (
+          openingBoundaryRefundCompanyIds.has(companyId) &&
+          round2(stripeCarrByCompany.get(companyId)?.previousArr || 0) === 0
+        ) {
+          return false;
+        }
         const hubspotCarr = carrByCompany.get(companyId);
         const stripeMeasuredAtBaseline =
           (transactionalCandidatesByCompany.has(companyId) && !existingBusinessCompanyIds.has(companyId)) ||
@@ -395,6 +446,11 @@ export async function generateAccountManagementReport(
   if (ineligiblePortfolioCount) {
     warnings.add(
       `${ineligiblePortfolioCount} portfolio account${ineligiblePortfolioCount === 1 ? " was" : "s were"} omitted from the selected-quarter book because the account had no Cloud Team, Managed, or Enterprise ARR at the prior quarter end.`,
+    );
+  }
+  if (openingBoundaryRefundCompanyIds.size) {
+    warnings.add(
+      `${openingBoundaryRefundCompanyIds.size} account${openingBoundaryRefundCompanyIds.size === 1 ? " was" : "s were"} removed from opening ARR because a managed-plan renewal invoice dated on the quarter's first day was fully refunded. The refund is attributed to the prior quarter even when Stripe's MRR event arrives later.`,
     );
   }
   const zeroCarrCompaniesWithoutWorkspace = Array.from(carrByCompany.entries()).filter(
@@ -501,7 +557,7 @@ export async function generateAccountManagementReport(
   const noBaselineCount = allAccounts.filter((account) => account.previousArr <= 0).length;
   if (noBaselineCount) {
     warnings.add(
-      `${noBaselineCount} portfolio account${noBaselineCount === 1 ? " has" : "s have"} no prior-quarter ARR and therefore ${noBaselineCount === 1 ? "does" : "do"} not affect NRR.`,
+      `${noBaselineCount} portfolio account${noBaselineCount === 1 ? " has" : "s have"} no opening-day ARR and therefore ${noBaselineCount === 1 ? "does" : "do"} not affect NRR.`,
     );
   }
 
@@ -574,7 +630,7 @@ export async function generateAccountManagementReport(
     currentQuarterLabel: quarterLabel(window.currentQuarterKey),
     periodStartDate: window.currentQuarterStart,
     periodEndDate: window.currentQuarterEnd,
-    comparisonStartDate: window.previousQuarterEnd,
+    comparisonStartDate: window.openingSnapshotDate,
     targetCurrency: FX_TARGET_CURRENCY,
     generatedAt: new Date().toISOString(),
     allCompanies,
@@ -595,16 +651,16 @@ export async function generateAccountManagementReport(
     warnings: Array.from(warnings),
     methodology: {
       portfolioDealType:
-        "The prior-quarter-end Cloud book. Stripe-measured accounts must be on Team, Managed, or Enterprise at the prior quarter end; Plus, PAYG, Free, and mid-quarter upgrades enter the book in the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their prior-quarter ARR is measured from HubSpot.",
+        "The opening-day Cloud book, measured at the end of the first calendar day of the selected quarter so month-end churn and downgrade processing is attributed to the prior quarter. Stripe-measured accounts must be on Team, Managed, or Enterprise on that opening snapshot; Plus, PAYG, Free, and later upgrades enter the book in the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their opening ARR is measured from HubSpot.",
       allCompaniesCohort:
-        "Company-wide NRR is the prior-quarter-end Cloud managed-account cohort, regardless of owner. Stripe-measured accounts must have Team, Managed, or Enterprise ARR at the baseline; Plus, PAYG, Free, and accounts first upgraded during the selected quarter are omitted until the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their prior-quarter ARR is measured from HubSpot. For a Transactional managed-plan company without an Existing Business portfolio deal, Stripe replaces HubSpot CARR so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
+        "Company-wide NRR is the opening-day Cloud managed-account cohort, regardless of owner. Stripe-measured accounts must have Team, Managed, or Enterprise ARR on the first-day snapshot; Plus, PAYG, Free, and accounts first upgraded later in the selected quarter are omitted until the following quarter. HubSpot-contracted Cloud Existing Business accounts remain eligible when their opening ARR is measured from HubSpot. For a Transactional managed-plan company without an Existing Business portfolio deal, Stripe replaces HubSpot CARR so the company is counted once. For other companies, a zero HubSpot ARR snapshot is filled from Stripe base-subscription ARR when a primary workspace ID is available.",
       outsideTeamCohort:
         "The outside-team table is the company-wide prior-quarter NRR cohort minus companies whose current HubSpot company CSM owner is Chloé, Sam, or Kieran.",
       ownerCohort: "Each company is assigned using the latest BigQuery-replicated value of the CSM owner property (`csm_owner`) on its HubSpot company record. Deal ownership is not used.",
       carrCalculation:
         "Existing Business companies use the BigQuery-replicated HubSpot deal and line-item data with the website's contracted-ARR rules. An Existing Business line cannot begin before that deal's close/effective date, preventing a copied renewal line from overlapping the contract it renews. Each zero quarter-end column is filled from BigQuery Stripe base-subscription ARR when available. All Transactional pipeline deals are classified as Cloud regardless of whether their HubSpot deployment field is blank. Stripe-measured accounts use BigQuery month-end base-subscription ARR joined through the deal's primary workspace ID. Stripe add-ons, AI tokens, conversation sessions, and web search/crawl revenue are excluded. Non-zero HubSpot ARR is never replaced, and each company is counted once.",
       nrrFormula:
-        "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no eligible prior-quarter-end ARR are omitted from the selected-quarter book. If Stripe plan history shows any managed-plan ARR reduction during the account's first 90 days—or HubSpot classifies the reduction as New account (<90 days)—the entire account is excluded from the numerator, denominator, contraction, and churn totals. This includes downgrades to Plus, churns, and refunds. Legacy-to-Cloud migrations are included using total prior ARR and total current ARR, so their migration expansion contributes to NRR.",
+        "NRR = current quarter-end ARR for the same opening-day account cohort ÷ opening-day ARR. The opening snapshot is taken at the end of the quarter's first calendar day, so subscriptions ending on the prior month-end are removed before the new quarter begins. A managed-plan renewal invoice dated on that first day and fully refunded is also treated as a prior-quarter churn, even if Stripe emits the MRR reduction later. Accounts with no eligible opening ARR are omitted. If Stripe plan history shows any managed-plan ARR reduction during the account's first 90 days—or HubSpot classifies the reduction as New account (<90 days)—the entire account is excluded from the numerator, denominator, contraction, and churn totals. This includes downgrades to Plus, churns, and refunds. Legacy-to-Cloud migrations are included using total opening ARR and total current ARR, so their migration expansion contributes to NRR.",
     },
   };
 }

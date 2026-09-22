@@ -60,7 +60,7 @@ export type AccountManagementWarehouseData = {
 };
 
 export async function queryAccountManagementWarehouseData(input: {
-  previousQuarterEnd: string;
+  openingSnapshotDate: string;
   currentQuarterEnd: string;
   targetCurrency: string;
 }): Promise<AccountManagementWarehouseData> {
@@ -75,7 +75,7 @@ export async function queryAccountManagementWarehouseData(input: {
   if (!includedStage) throw new Error("Missing env var: INCLUDED_DEALSTAGE");
 
   const params: BigQuerySqlParameter[] = [
-    { name: "previous_quarter_end", type: "STRING", value: input.previousQuarterEnd },
+    { name: "opening_snapshot_date", type: "STRING", value: input.openingSnapshotDate },
     { name: "current_quarter_end", type: "STRING", value: input.currentQuarterEnd },
     { name: "target_currency", type: "STRING", value: input.targetCurrency },
     { name: "included_stage", type: "STRING", value: includedStage },
@@ -205,7 +205,7 @@ lines AS (
   FROM valued v
 ),
 snapshots AS (
-  SELECT DATE(@previous_quarter_end) AS snapshot_date, 'previous' AS snapshot_key
+  SELECT DATE(@opening_snapshot_date) AS snapshot_date, 'previous' AS snapshot_key
   UNION ALL
   SELECT DATE(@current_quarter_end), 'current'
 ),

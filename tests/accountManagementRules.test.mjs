@@ -104,6 +104,8 @@ test("builds the prior and selected quarter-end comparison window", () => {
     previousPeriodMonthKey: "2026-06",
     currentPeriodMonthKey: "2026-09",
     currentQuarterStart: "2026-07-01",
+    openingSnapshotDate: "2026-07-01",
+    currentQuarterActivityStart: "2026-07-02",
     previousQuarterEnd: "2026-06-30",
     currentQuarterEnd: "2026-09-30",
     ownerCutoffIso: "2026-06-30T23:59:59.999Z",

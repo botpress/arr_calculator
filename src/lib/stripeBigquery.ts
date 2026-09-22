@@ -272,6 +272,16 @@ export type StripeManagedEarlyLifecycleActivityResult = {
   rows: StripeManagedEarlyLifecycleActivityRow[];
 };
 
+export type StripeOpeningBoundaryRefundRow = {
+  workspaceId: string;
+  customerId: string;
+  invoiceId: string;
+};
+
+export type StripeOpeningBoundaryRefundResult = {
+  rows: StripeOpeningBoundaryRefundRow[];
+};
+
 export type StripeLegacyToV4MigrationRequest = {
   startDate: string;
   endDate: string;
@@ -4690,6 +4700,106 @@ ORDER BY workspace_id, customer_id
       customerId: asString(row.customer_id),
       managedStartDate: asString(row.managed_start_date),
       activityDate: asString(row.activity_date),
+    })),
+  };
+}
+
+export async function queryStripeOpeningBoundaryRefundsFromBigQuery(
+  request: {
+    workspaceIds: string[];
+    openingSnapshotDate: string;
+    targetCurrency: string;
+  },
+  options?: StripeBigQueryOptions,
+): Promise<StripeOpeningBoundaryRefundResult> {
+  const openingSnapshot = parseIsoDateUtc(request.openingSnapshotDate);
+  if (!openingSnapshot) throw new Error("Invalid openingSnapshotDate");
+  const workspaceIds = Array.from(
+    new Set((request.workspaceIds || []).map((value) => normalizeWorkspaceIdToken(value)).filter(Boolean)),
+  ).sort();
+  if (!workspaceIds.length) return { rows: [] };
+
+  const profile = normalizeProfile(options?.profile);
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const chargesTable = getStripeChargesTable(profile);
+  const invoicesTable = "botpress-stripe-data-pipeline.stripe.invoices";
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+
+  const query = `
+WITH workspace_customers AS (
+  SELECT
+    LOWER(TRIM(CAST(m.value AS STRING))) AS workspace_id,
+    CAST(m.customer_id AS STRING) AS customer_id
+  FROM \`${customersMetadataTable}\` m
+  WHERE LOWER(TRIM(CAST(m.\`key\` AS STRING))) = 'workspace_id'
+    AND LOWER(TRIM(CAST(m.value AS STRING))) IN UNNEST(@workspace_ids)
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY LOWER(TRIM(CAST(m.value AS STRING))), CAST(m.customer_id AS STRING)
+    ORDER BY CAST(m.batch_timestamp AS STRING) DESC
+  ) = 1
+),
+latest_invoices AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      i.*,
+      ROW_NUMBER() OVER (PARTITION BY i.id ORDER BY i.batch_timestamp DESC) AS rn
+    FROM \`${invoicesTable}\` i
+    JOIN workspace_customers wc ON wc.customer_id = CAST(i.customer_id AS STRING)
+    WHERE DATE(i.date) = DATE(@opening_snapshot_date)
+      AND LOWER(COALESCE(CAST(i.currency AS STRING), '')) = @target_currency
+  )
+  WHERE rn = 1
+),
+latest_charges AS (
+  SELECT raw_json
+  FROM (
+    SELECT
+      TO_JSON_STRING(c) AS raw_json,
+      ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY c.batch_timestamp DESC) AS rn
+    FROM \`${chargesTable}\` c
+    WHERE CAST(c.customer_id AS STRING) IN (SELECT customer_id FROM workspace_customers)
+  )
+  WHERE rn = 1
+),
+charge_refunds AS (
+  SELECT
+    COALESCE(
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice')), ''),
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice.id')), '')
+    ) AS invoice_id,
+    SUM(GREATEST(COALESCE(SAFE_CAST(JSON_VALUE(raw_json, '$.amount_refunded') AS FLOAT64), 0), 0)) AS amount_refunded
+  FROM latest_charges
+  GROUP BY invoice_id
+)
+SELECT DISTINCT
+  wc.workspace_id,
+  wc.customer_id,
+  CAST(i.id AS STRING) AS invoice_id
+FROM latest_invoices i
+JOIN workspace_customers wc ON wc.customer_id = CAST(i.customer_id AS STRING)
+JOIN charge_refunds r ON r.invoice_id = CAST(i.id AS STRING)
+WHERE LOWER(TRIM(COALESCE(CAST(i.status AS STRING), ''))) = 'paid'
+  AND COALESCE(i.amount_paid, 0) > 0
+  AND COALESCE(r.amount_refunded, 0) >= COALESCE(i.amount_paid, 0)
+ORDER BY workspace_id, customer_id, invoice_id
+`;
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, [
+    { name: "workspace_ids", type: "ARRAY_STRING", value: workspaceIds },
+    { name: "opening_snapshot_date", type: "STRING", value: request.openingSnapshotDate },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+  ]);
+  return {
+    rows: rows.map((row) => ({
+      workspaceId: asString(row.workspace_id),
+      customerId: asString(row.customer_id),
+      invoiceId: asString(row.invoice_id),
     })),
   };
 }
