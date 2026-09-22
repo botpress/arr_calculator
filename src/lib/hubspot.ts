@@ -24,12 +24,38 @@ const DEAL_PIPELINE_LABELS_CACHE = new Map<string, CacheEntry<Array<[string, str
 const DEAL_STAGE_WORKSPACE_IDS_CACHE = new Map<string, CacheEntry<string[]>>();
 const SALES_ASSIST_DEALS_CACHE = new Map<string, CacheEntry<SalesAssistDealMatch[]>>();
 const DEAL_ASSOC_CACHE = new Map<string, CacheEntry<string[]>>();
+const DEAL_COMPANY_ASSOC_CACHE = new Map<string, CacheEntry<string[]>>();
+const DEAL_PROPERTY_HISTORY_CACHE = new Map<string, CacheEntry<HubspotDealWithPropertyHistory>>();
 const COMPANY_CONTACT_ASSOC_CACHE = new Map<string, CacheEntry<string[]>>();
 const CONTACT_COMPANY_ASSOC_CACHE = new Map<string, CacheEntry<string[]>>();
 const CONTACT_EMAIL_SEARCH_CACHE = new Map<string, CacheEntry<string[]>>();
 const COMPANY_CACHE = new Map<string, CacheEntry<HubspotCompany>>();
 const CONTACT_CACHE = new Map<string, CacheEntry<HubspotContact>>();
 const LINE_ITEM_CACHE = new Map<string, CacheEntry<HubspotLineItem>>();
+const OWNERS_CACHE = new Map<string, CacheEntry<HubspotOwner[]>>();
+
+export type HubspotOwner = {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  archived?: boolean;
+};
+
+export type HubspotPropertyHistoryValue = {
+  value?: string;
+  timestamp?: string;
+  sourceType?: string;
+  sourceId?: string;
+  updatedByUserId?: number;
+};
+
+export type HubspotDealWithPropertyHistory = HubspotDeal & {
+  createdAt?: string;
+  updatedAt?: string;
+  archived?: boolean;
+  propertiesWithHistory?: Record<string, HubspotPropertyHistoryValue[]>;
+};
 
 export function clearHubspotMemoryCache() {
   DEALS_CACHE.clear();
@@ -38,12 +64,15 @@ export function clearHubspotMemoryCache() {
   DEAL_STAGE_WORKSPACE_IDS_CACHE.clear();
   SALES_ASSIST_DEALS_CACHE.clear();
   DEAL_ASSOC_CACHE.clear();
+  DEAL_COMPANY_ASSOC_CACHE.clear();
+  DEAL_PROPERTY_HISTORY_CACHE.clear();
   COMPANY_CONTACT_ASSOC_CACHE.clear();
   CONTACT_COMPANY_ASSOC_CACHE.clear();
   CONTACT_EMAIL_SEARCH_CACHE.clear();
   COMPANY_CACHE.clear();
   CONTACT_CACHE.clear();
   LINE_ITEM_CACHE.clear();
+  OWNERS_CACHE.clear();
 }
 
 export type SalesAssistDealMatchType = "transactional_closed_won" | "closed_lost_selfserve";
@@ -56,6 +85,7 @@ export type SalesAssistDealMatch = {
   closedAtMs: number;
   dealName: string;
   primaryCompanyId: string;
+  deploymentType: string;
 };
 
 function getToken() {
@@ -203,6 +233,11 @@ type DealPipelinesResponse = {
   }>;
 };
 
+type HubspotOwnersResponse = {
+  results?: HubspotOwner[];
+  paging?: { next?: { after?: string } };
+};
+
 type DealLineItemAssociationResponse = {
   results?: Array<{ id?: string | number }>;
 };
@@ -211,6 +246,33 @@ type DealLineItemBatchAssociationResponse = {
   results?: Array<{
     from?: { id?: string | number };
     to?: Array<{ toObjectId?: string | number; id?: string | number }>;
+  }>;
+};
+
+type DealCompanyAssociationResponse = {
+  results?: Array<{
+    id?: string | number;
+    toObjectId?: string | number;
+    associationTypes?: Array<{
+      category?: string;
+      typeId?: number;
+      label?: string | null;
+    }>;
+  }>;
+};
+
+type DealCompanyBatchAssociationResponse = {
+  results?: Array<{
+    from?: { id?: string | number };
+    to?: Array<{
+      toObjectId?: string | number;
+      id?: string | number;
+      associationTypes?: Array<{
+        category?: string;
+        typeId?: number;
+        label?: string | null;
+      }>;
+    }>;
   }>;
 };
 
@@ -305,6 +367,40 @@ export async function fetchDealsInStage(properties: string[], dealstage: string)
   while (true) {
     const payload: DealSearchPayload = {
       filterGroups: [{ filters: [{ propertyName: "dealstage", operator: "EQ", value: dealstage }] }],
+      properties,
+      limit: 100,
+    };
+    if (after) payload.after = after;
+
+    const json: HubspotSearchResponse<HubspotDeal> = await hsFetch(url, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    results.push(...(json.results || []));
+    after = json.paging?.next?.after ?? null;
+    if (!after) break;
+  }
+
+  writeCache(DEALS_CACHE, cacheKey, results);
+  return results;
+}
+
+export async function fetchDealsByDealType(properties: string[], dealType: string) {
+  const normalizedDealType = String(dealType || "").trim();
+  if (!normalizedDealType) return [];
+
+  const cacheKey = `dealtype:${normalizedDealType}|${[...properties].sort().join(",")}`;
+  const cached = readCache(DEALS_CACHE, cacheKey);
+  if (cached) return cached;
+
+  const url = `${HUBSPOT_BASE}/crm/v3/objects/deals/search`;
+  let after: string | null = null;
+  const results: HubspotDeal[] = [];
+
+  while (true) {
+    const payload: DealSearchPayload = {
+      filterGroups: [{ filters: [{ propertyName: "dealtype", operator: "EQ", value: normalizedDealType }] }],
       properties,
       limit: 100,
     };
@@ -465,6 +561,86 @@ export async function fetchDealPipelineIdToLabelMap() {
   }
 
   writeCache(DEAL_PIPELINE_LABELS_CACHE, cacheKey, Array.from(out.entries()));
+  return out;
+}
+
+export async function fetchHubspotOwnersById(ownerIds: string[]) {
+  const requested = Array.from(new Set((ownerIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  if (!requested.length) return new Map<string, HubspotOwner>();
+
+  const cacheKey = "active-and-archived";
+  let owners = readCache(OWNERS_CACHE, cacheKey);
+  if (!owners) {
+    owners = [];
+    for (const archived of [false, true]) {
+      let after = "";
+      while (true) {
+        const params = new URLSearchParams({ limit: "500", archived: String(archived) });
+        if (after) params.set("after", after);
+        const json = (await hsFetch(`${HUBSPOT_BASE}/crm/v3/owners?${params.toString()}`)) as HubspotOwnersResponse;
+        owners.push(...(json.results || []));
+        after = String(json.paging?.next?.after || "");
+        if (!after) break;
+      }
+    }
+    writeCache(OWNERS_CACHE, cacheKey, owners);
+  }
+
+  const requestedSet = new Set(requested);
+  return new Map(
+    owners
+      .filter((owner) => requestedSet.has(String(owner.id || "")))
+      .map((owner) => [String(owner.id), owner]),
+  );
+}
+
+export async function batchReadDealPropertyHistory(dealIds: string[], propertyNames: string[]) {
+  const ids = Array.from(new Set((dealIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+  const properties = Array.from(
+    new Set((propertyNames || []).map((property) => String(property || "").trim()).filter(Boolean)),
+  );
+  const out = new Map<string, HubspotDealWithPropertyHistory>();
+  if (!ids.length || !properties.length) return out;
+
+  const propertyKey = properties.slice().sort().join(",");
+  const missingIds: string[] = [];
+  for (const id of ids) {
+    const cached = readCache(DEAL_PROPERTY_HISTORY_CACHE, `${id}|${propertyKey}`);
+    if (cached) out.set(id, cached);
+    else missingIds.push(id);
+  }
+
+  if (!missingIds.length) return out;
+
+  const url = `${HUBSPOT_BASE}/crm/v3/objects/deals/batch/read`;
+  const chunks: string[][] = [];
+  // HubSpot caps batch reads that request property histories at 50 records.
+  const propertyHistoryBatchSize = 50;
+  for (let i = 0; i < missingIds.length; i += propertyHistoryBatchSize) {
+    chunks.push(missingIds.slice(i, i + propertyHistoryBatchSize));
+  }
+
+  const chunkResults = await mapWithConcurrency(chunks, HUBSPOT_BATCH_READ_CONCURRENCY, async (chunk) => {
+    const json = await hsFetch(url, {
+      method: "POST",
+      body: JSON.stringify({
+        properties,
+        propertiesWithHistory: properties,
+        inputs: chunk.map((id) => ({ id })),
+      }),
+    });
+    return (json.results || []) as HubspotDealWithPropertyHistory[];
+  });
+
+  for (const deals of chunkResults) {
+    for (const deal of deals) {
+      const id = String(deal.id || "").trim();
+      if (!id) continue;
+      out.set(id, deal);
+      writeCache(DEAL_PROPERTY_HISTORY_CACHE, `${id}|${propertyKey}`, deal);
+    }
+  }
+
   return out;
 }
 
@@ -663,7 +839,7 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
     const deals = await fetchDealsForStageWithWorkspaceCandidates(
       stageId,
       workspacePropCandidates,
-      ["closedate", "dealname", "hs_primary_associated_company"],
+      ["closedate", "dealname", "hs_primary_associated_company", "deployment_type__c"],
       dateRange,
     );
     for (const deal of deals || []) {
@@ -683,6 +859,7 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
         closedAtMs,
         dealName: String(properties.dealname || "").trim(),
         primaryCompanyId: String(properties.hs_primary_associated_company || "").trim(),
+        deploymentType: String(properties.deployment_type__c || "").trim(),
       });
     }
   }
@@ -714,6 +891,7 @@ async function fetchSalesAssistDealMatchesInternal(dateRange?: { startDate: stri
         closedAtMs,
         dealName: String(properties.dealname || "").trim(),
         primaryCompanyId: String(properties.hs_primary_associated_company || "").trim(),
+        deploymentType: String(properties.deployment_type__c || "").trim(),
       });
     }
   }
@@ -908,6 +1086,109 @@ export async function fetchLineItemIdsForDeals(dealIds: string[]) {
   }
 
   return dealIds.map((dealId) => ({ dealId, ids: out.get(dealId) || [] }));
+}
+
+function associationIsPrimary(
+  association: { associationTypes?: Array<{ typeId?: number; label?: string | null }> },
+) {
+  return (association.associationTypes || []).some((type) => {
+    const label = String(type.label || "").trim().toLowerCase();
+    return label === "primary" || Number(type.typeId || 0) === 5;
+  });
+}
+
+function orderedAssociatedCompanyIds(
+  associations: Array<{
+    id?: string | number;
+    toObjectId?: string | number;
+    associationTypes?: Array<{ typeId?: number; label?: string | null }>;
+  }>,
+) {
+  return associations
+    .map((association) => ({
+      id: String(association.toObjectId || association.id || "").trim(),
+      primary: associationIsPrimary(association),
+    }))
+    .filter((association) => Boolean(association.id))
+    .sort((a, b) => Number(b.primary) - Number(a.primary) || a.id.localeCompare(b.id))
+    .map((association) => association.id);
+}
+
+export async function fetchCompanyIdsForDeal(dealId: string) {
+  const normalizedDealId = String(dealId || "").trim();
+  if (!normalizedDealId) return [];
+  const cached = readCache(DEAL_COMPANY_ASSOC_CACHE, normalizedDealId);
+  if (cached) return cached;
+
+  const url = `${HUBSPOT_BASE}/crm/v4/objects/deals/${normalizedDealId}/associations/companies`;
+  const json = (await hsFetch(url)) as DealCompanyAssociationResponse;
+  const ids = orderedAssociatedCompanyIds(json.results || []);
+  writeCache(DEAL_COMPANY_ASSOC_CACHE, normalizedDealId, ids);
+  return ids;
+}
+
+export async function fetchCompanyIdsForDeals(dealIds: string[]) {
+  const dedupedDealIds = Array.from(
+    new Set((dealIds || []).map((id) => String(id || "").trim()).filter(Boolean)),
+  );
+  const out = new Map<string, string[]>();
+  const pending: string[] = [];
+
+  for (const dealId of dedupedDealIds) {
+    const cached = readCache(DEAL_COMPANY_ASSOC_CACHE, dealId);
+    if (cached) out.set(dealId, cached);
+    else pending.push(dealId);
+  }
+
+  if (pending.length) {
+    let resolvedByBatch = false;
+    try {
+      const batchUrl = `${HUBSPOT_BASE}/crm/v4/associations/deals/companies/batch/read`;
+      const chunks: string[][] = [];
+      for (let i = 0; i < pending.length; i += 100) chunks.push(pending.slice(i, i + 100));
+
+      const chunkResults = await mapWithConcurrency(
+        chunks,
+        HUBSPOT_ASSOC_BATCH_CONCURRENCY,
+        async (chunk): Promise<DealCompanyBatchAssociationResponse> =>
+          (await hsFetch(batchUrl, {
+            method: "POST",
+            body: JSON.stringify({ inputs: chunk.map((id) => ({ id })) }),
+          })) as DealCompanyBatchAssociationResponse,
+      );
+
+      const seenInBatch = new Set<string>();
+      for (const chunkResult of chunkResults) {
+        for (const association of chunkResult.results || []) {
+          const dealId = String(association.from?.id || "").trim();
+          if (!dealId) continue;
+          seenInBatch.add(dealId);
+          const ids = orderedAssociatedCompanyIds(association.to || []);
+          out.set(dealId, ids);
+          writeCache(DEAL_COMPANY_ASSOC_CACHE, dealId, ids);
+        }
+      }
+
+      for (const dealId of pending) {
+        if (seenInBatch.has(dealId)) continue;
+        out.set(dealId, []);
+        writeCache(DEAL_COMPANY_ASSOC_CACHE, dealId, []);
+      }
+      resolvedByBatch = true;
+    } catch {
+      resolvedByBatch = false;
+    }
+
+    if (!resolvedByBatch) {
+      const pairs = await mapWithConcurrency(pending, HUBSPOT_ASSOC_CONCURRENCY, async (dealId) => ({
+        dealId,
+        ids: await fetchCompanyIdsForDeal(dealId),
+      }));
+      for (const pair of pairs) out.set(pair.dealId, pair.ids);
+    }
+  }
+
+  return dedupedDealIds.map((dealId) => ({ dealId, ids: out.get(dealId) || [] }));
 }
 
 export async function fetchContactIdsForCompany(companyId: string) {

@@ -6,6 +6,9 @@ This is a Next.js ARR dashboard.
 - `/stripe` Stripe ARR report
 - `/stripe-arr-correct` Stripe ARR (Correct) report
 - `/combined-all-subs` Combined ARR by customer (HubSpot cloud C-ARR + Stripe through-MRR merge)
+- `/commissions` Admin-only owner commission and Stripe clawback report
+- `/scorecards` Google-authenticated team performance dashboards
+- `/tv/scorecards/[team]` Read-only, HTTP Basic Auth performance dashboard for Yodeck
 - `/tofu` Monthly TOFU ARR bridge (Beginning/New/Expansion/Contraction/Churn/Ending)
 - `/quickbooks` QuickBooks OAuth + data access page
 - `POST /api/report` HubSpot report API
@@ -14,6 +17,8 @@ This is a Next.js ARR dashboard.
 - `GET|POST /api/stripe-arr-correct-report` Stripe ARR (Correct) API (BigQuery profile)
 - `GET /api/stripe-arr-correct-report/export` Stripe ARR (Correct) CSV export API
 - `GET|POST /api/combined-all-subs-report` Combined HubSpot+Stripe customer ARR API
+- `POST /api/commissions` Admin-only monthly commissions API
+- `GET /api/tv/team-scorecards` Read-only, HTTP Basic Auth scorecard API for Yodeck
 - `GET|POST /api/tofu-report` Monthly TOFU ARR bridge API based on Combined All Subs
 - `GET|POST /api/hubspot-current-metrics-sync` Push current ARR/contracted ARR values into HubSpot deal properties
 - `GET|POST /api/stripe-sync` Stripe sync API
@@ -29,6 +34,22 @@ This is a Next.js ARR dashboard.
 - `POST /api/quickbooks/query` Run a QuickBooks SQL-like query
 - `POST /api/quickbooks/disconnect` Clear saved QuickBooks tokens
 - `GET|POST /api/slack/daily-arr-summary` Send daily Projected ARR metrics to Slack (DM/channel)
+- `GET|POST /api/billing/monthly-draft-invoices` Create review-only Stripe draft invoices from Closed Won sales-led HubSpot deals
+
+## Yodeck TV Performance Dashboards
+
+The `/tv/scorecards` directory and every `/tv/scorecards/[team]` page use HTTP Basic Authentication instead of Google sign-in. Configure both variables in Vercel:
+
+- `TV_DASHBOARD_USERNAME`
+- `TV_DASHBOARD_PASSWORD`
+
+Use a dedicated, randomly generated password containing only URL-safe ASCII characters. Add a Yodeck Web Page using this format, percent-encoding the credentials when necessary:
+
+```text
+https://TV_USERNAME:TV_PASSWORD@YOUR_DOMAIN/tv/scorecards/sales
+```
+
+Available team slugs are `engineering`, `product`, `sales`, `account-management`, `delivery`, `support`, `marketing`, `finance`, and `people-ops`. After Basic Auth succeeds, the app exchanges it for a signed, HTTP-only TV session cookie and removes the credentials from the visible browser URL. Both the page and the separate GET-only scorecard API remain authenticated. TV pages disable management controls, prevent search indexing and browser caching, and refresh calculated data every five minutes.
 
 ## Automatic Stripe Sync
 
@@ -40,7 +61,7 @@ Vercel cron runs Stripe sync automatically every 5 minutes:
 - `55 23 * * *` (`/api/stripe-upcoming-snapshots-cleanup`) end-of-day cleanup: keep only latest same-day upcoming snapshot
 - `5 * * * *` (`/api/hubspot-current-metrics-sync`) hourly HubSpot deal metric property update
 - `0 */6 * * *` (`/api/quickbooks/keepalive`) QuickBooks OAuth token keepalive
-- `0 12 * * *` (`/api/slack/daily-arr-summary`) daily Slack message with projected ARR EOM stats
+- `5 9 1 * *` (`/api/billing/monthly-draft-invoices`) monthly Stripe draft-invoice generation at 09:05 UTC on the first day
 
 `/api/stripe-sync` accepts:
 
@@ -317,11 +338,87 @@ Recommended env values:
 
 ## Required Environment Variables
 
+### Monthly Stripe Draft Invoices
+
+The `GET|POST /api/billing/monthly-draft-invoices` job runs at `09:05 UTC` on the first day of each month. It reads Closed Won deals from HubSpot's default sales pipeline and creates Stripe invoices with `auto_advance=false`; it never finalizes, emails, or charges them.
+
+The job is forced into dry-run mode until `BILLING_DRAFTS_ENABLED=true` is set:
+
+- `BILLING_PIPELINE_ID` (optional; defaults to this portal's Sales Default Pipeline internal ID, `0cbbc8c6-dccf-4601-8d59-b6a15ed5129b`)
+- `BILLING_DEALSTAGE` (optional; defaults to this portal's Sales Default Pipeline Closed Won stage internal ID, `f12c408f-f92b-4a95-8b59-9f801b19b105`)
+- `BILLING_DRAFTS_ENABLED` (default false)
+- `BILLING_ALLOWED_CURRENCIES` (optional comma-separated allowlist; default `USD`)
+- `BILLING_DAYS_UNTIL_DUE` (optional; default `30`)
+- `BILLING_DAYS_UNTIL_DUE_PROPERTY` (optional HubSpot deal override)
+- `BILLING_STRIPE_CUSTOMER_ID_PROPERTY` (optional HubSpot deal property containing a `cus_...` ID)
+- `BILLING_STRIPE_CUSTOMER_METADATA_KEY` (optional Stripe customer metadata key; default `workspace_id`)
+- `BILLING_MAX_DEALS_PER_RUN` (optional; default and maximum `1000`)
+
+Every deal in the configured Closed Won stage and pipeline is checked, but a draft is created only when at least one associated line item is due in the requested month. If the deal has no explicit Stripe customer ID, the job matches `DEAL_WORKSPACE_ID_PROP` to Stripe customer metadata. Missing or ambiguous matches are skipped. Recurring line items must have a start date, a supported monthly/quarterly/semiannual/annual frequency, a positive amount, and either an end date or term. One-time items are included only in their start month.
+
+Manual dry-run example:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://YOUR_DOMAIN/api/billing/monthly-draft-invoices?month=2026-09&dryRun=true"
+```
+
+### Daily Customer Monthly History
+
+`GET|POST /api/customer-monthly-history-sync` rebuilds
+`botpress-stripe-data-pipeline.precomputed_tables.customer_monthly_history` every day at `10:30 UTC`,
+after the website's nightly precomputed-facts refresh. `GET` requires `Authorization: Bearer $CRON_SECRET`;
+signed-in admins can also trigger it with `POST`.
+
+The endpoint submits the rebuild as an asynchronous BigQuery job and returns HTTP `202` with its
+`jobId`; the existing table remains available until BigQuery atomically replaces it on completion.
+
+The table has one row per logical customer per calendar month, from the later of the customer's signup
+month or `CUSTOMER_MONTHLY_HISTORY_START` through the current month. It includes customers with zero ARR.
+Core columns are:
+
+- identity: `customer_month_key`, `month_start`, `customer_key`, `customer_id`, `stripe_customer_ids`
+- workspace/account: `workspace_id`, `workspace_ids`, `hubspot_company_id`, `customer_name`, `email`, `signup_date`, `deployment_type`, `deployment_types`
+- monthly state: `motion`, `pricing_plan`, `plan_family`, `plan_version`, `billing_interval`, `active_pricing_plans`, `arr`, `mrr`, `is_active`
+
+ARR and motion use `vw_fact_customer_arr_periodic_current`, so they stay aligned with the website's
+combined-subscriptions heuristics. Stripe customer metadata connects customer IDs to workspaces and
+HubSpot accounts. Stripe MRR events plus price/product metadata add detailed labels such as
+`v3 plus annual` and `v4 plus monthly`. For Stripe customers that do not yet exist in the website fact,
+the job derives ARR directly from the cumulative Stripe MRR event history and classifies them as
+`selfserve`; HubSpot accounts default to `salesled`. Sales-assist flags from the website fact override
+both defaults.
+
+The customer population is not restricted to Cloud deployments. Every non-archived, Closed Won
+HubSpot company is included regardless of deployment type, and all observed deployment types are
+retained in `deployment_types`. Stripe customers are also included regardless of deployment type.
+
+Optional configuration:
+
+- `CUSTOMER_MONTHLY_HISTORY_PROJECT` (default `PRECOMPUTED_TABLES_PROJECT`, then `botpress-stripe-data-pipeline`)
+- `CUSTOMER_MONTHLY_HISTORY_DATASET` (default `PRECOMPUTED_TABLES_DATASET`, then `precomputed_tables`)
+- `CUSTOMER_MONTHLY_HISTORY_TABLE` (default `customer_monthly_history`)
+- `CUSTOMER_MONTHLY_HISTORY_START` (default `2015-01-01`)
+- `STRIPE_SOURCE_PROJECT` / `STRIPE_SOURCE_DATASET` (fallback source location)
+- existing `BIGQUERY_STRIPE_*` source-table overrides are honored
+
+Manual run:
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  "https://YOUR_DOMAIN/api/customer-monthly-history-sync"
+```
+
 HubSpot:
 
 - `HUBSPOT_PRIVATE_APP_TOKEN`
 - `INCLUDED_DEALSTAGE`
 - `HUBSPOT_TRANSACTIONAL_STAGE_ID` (optional, used by sales-assist matching on Stripe Through MRR; overrides label lookup)
+- `HUBSPOT_COMMISSION_TRANSACTIONAL_PIPELINE_ID` / `HUBSPOT_COMMISSION_TRANSACTIONAL_CLOSED_WON_STAGE_ID` (optional commissions pipeline overrides)
+- `HUBSPOT_COMMISSION_SALES_PIPELINE_ID` / `HUBSPOT_COMMISSION_SALES_CLOSED_WON_STAGE_ID` (optional commissions pipeline overrides)
+- `HUBSPOT_PORTAL_ID` (optional, used for deal links on the commissions page)
+- `COMMISSION_CLAWBACK_LOOKBACK_MONTHS` (optional, defaults to `24`)
 - `HUBSPOT_TRANSACTIONAL_STAGE_LABEL` (optional fallback label, default `Closed Won (Transactional Pipeline)`)
 - `FX_TARGET_CURRENCY`
 - `HUBSPOT_CONTRACTED_ARR_FIELD` (optional, default `contracted_arr`)
@@ -334,7 +431,11 @@ Authentication (Google SSO):
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `AUTH_ALLOWED_DOMAINS` (comma-separated company domains, e.g. `botpress.com,example.com`)
+- `AUTH_ALLOWED_EMAILS` (optional comma-separated Viewer email allowlist)
 - `AUTH_ADMIN_EMAILS` (optional comma-separated admin email allowlist)
+- `AUTH_SALES_EMAILS` (optional comma-separated Sales email allowlist)
+- `AUTH_ACCOUNT_MANAGEMENT_EMAILS` (optional comma-separated Account Management email allowlist)
+- `AUTH_GTM_EMAILS` (optional comma-separated GTM email allowlist; role lists may overlap)
 
 Stripe:
 

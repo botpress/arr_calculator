@@ -25,12 +25,16 @@
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/slack/daily-arr-summary",
-      "schedule": "0 12 * * *"
-    },
-    {
       "path": "/api/cache/nightly-sync",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/customer-monthly-history-sync",
+      "schedule": "30 10 * * *"
+    },
+    {
+      "path": "/api/billing/monthly-draft-invoices",
+      "schedule": "5 9 1 * *"
     }
   ]
 }

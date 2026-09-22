@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import React, { useMemo, useRef, useState } from "react";
 
 type CombineMode = "grouped" | "simple";
@@ -554,17 +553,6 @@ export default function TofuPage() {
               Simple mode to use the non-grouped HubSpot+Stripe table. Group by Plan adds plan-level bridge lines,
               and Group by Segment splits into sales-led, self-serve, and sales assist.
             </p>
-          </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/combined-billing-overview" className="stripe-ui__hero-link">
-              Open Combined Billing Overview
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
           </div>
         </div>
       </section>

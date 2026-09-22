@@ -186,6 +186,7 @@ export type StripeThroughMrrCustomerArrRequest = {
   endDate: string;
   targetCurrency: string;
   grain?: "daily" | "monthly";
+  baseSubscriptionOnly?: boolean;
 };
 
 export type StripeThroughMrrCustomerArrResult = {
@@ -258,6 +259,83 @@ export type StripeThroughMrrCustomerPlanResult = {
   targetCurrency: string;
   grain: "daily" | "monthly";
   rows: StripeThroughMrrCustomerPlanRow[];
+};
+
+export type StripeManagedEarlyLifecycleActivityRow = {
+  workspaceId: string;
+  customerId: string;
+  managedStartDate: string;
+  activityDate: string;
+};
+
+export type StripeManagedEarlyLifecycleActivityResult = {
+  rows: StripeManagedEarlyLifecycleActivityRow[];
+};
+
+export type StripeOpeningBoundaryRefundRow = {
+  workspaceId: string;
+  customerId: string;
+  invoiceId: string;
+};
+
+export type StripeOpeningBoundaryRefundResult = {
+  rows: StripeOpeningBoundaryRefundRow[];
+};
+
+export type StripeLegacyToV4MigrationRequest = {
+  startDate: string;
+  endDate: string;
+  targetCurrency: string;
+};
+
+export type StripeLegacyToV4MigrationRow = {
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  workspaceId: string;
+  migratedAt: string;
+  previousPlan: string;
+  currentPlan: string;
+  migratedArr: number;
+  legacyArrBefore: number;
+  v4ArrAfter: number;
+};
+
+export type StripeLegacyToV4MigrationResult = {
+  startDate: string;
+  endDate: string;
+  targetCurrency: string;
+  rows: StripeLegacyToV4MigrationRow[];
+};
+
+export type StripeLegacyPlanPopulationRequest = {
+  fiscalYearStart: string;
+  asOfDate: string;
+  targetCurrency: string;
+};
+
+export type StripeLegacyPlanPopulationResult = {
+  fiscalYearStart: string;
+  asOfDate: string;
+  targetCurrency: string;
+  opening: {
+    customers: number;
+    arr: number;
+  };
+  current: {
+    customers: number;
+    arr: number;
+  };
+  openingCustomers: StripeLegacyPlanPopulationCustomerRow[];
+  currentCustomers: StripeLegacyPlanPopulationCustomerRow[];
+};
+
+export type StripeLegacyPlanPopulationCustomerRow = {
+  customerId: string;
+  customerName: string;
+  customerEmail: string;
+  workspaceId: string;
+  arr: number;
 };
 
 export type StripeBillingOverviewGrain = "daily" | "weekly" | "monthly" | "quarterly";
@@ -682,11 +760,17 @@ export type StripeUpcomingSnapshotsCleanupResult = {
   dryRun: boolean;
 };
 
-type BigQueryNamedParameter = {
-  name: string;
-  type: "INT64" | "STRING";
-  value: string;
-};
+type BigQueryNamedParameter =
+  | {
+      name: string;
+      type: "INT64" | "STRING";
+      value: string;
+    }
+  | {
+      name: string;
+      type: "ARRAY_STRING";
+      value: string[];
+    };
 
 type StripeBigQueryOptions = {
   profile?: StripeBigQueryProfile;
@@ -706,6 +790,7 @@ const STRIPE_ARR_CORRECT_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.i
 const STRIPE_ARR_CORRECT_MRR_CHANGE_DEFAULT_TABLE =
   "botpress-stripe-data-pipeline.stripe.subscription_item_change_events_v2_beta";
 const STRIPE_PRODUCTS_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.products";
+const STRIPE_PRICES_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.prices";
 const STRIPE_CUSTOMERS_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.customers";
 const STRIPE_CUSTOMERS_METADATA_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.customers_metadata";
 const STRIPE_CHARGES_DEFAULT_TABLE = "botpress-stripe-data-pipeline.stripe.charges";
@@ -1191,6 +1276,15 @@ function getStripeProductsTable(profile: StripeBigQueryProfile = "default") {
       : "BIGQUERY_STRIPE_PRODUCTS_TABLE";
   const configured = String(process.env[envName] || "").trim();
   return configured || STRIPE_PRODUCTS_DEFAULT_TABLE;
+}
+
+function getStripePricesTable(profile: StripeBigQueryProfile = "default") {
+  const envName =
+    profile === "stripe_arr_correct"
+      ? "BIGQUERY_STRIPE_ARR_CORRECT_PRICES_TABLE"
+      : "BIGQUERY_STRIPE_PRICES_TABLE";
+  const configured = String(process.env[envName] || "").trim();
+  return configured || STRIPE_PRICES_DEFAULT_TABLE;
 }
 
 function getStripeUpcomingSnapshotsTable(profile: StripeBigQueryProfile = "default") {
@@ -1723,12 +1817,20 @@ async function fetchBigQueryResultsPage(
   params: BigQueryNamedParameter[],
   pageToken?: string,
 ): Promise<BigQueryQueryResponse> {
-  const queryParameters: Array<{ name: string; parameterType: { type: string }; parameterValue: { value: string } }> =
-    params.map((p) => ({
-      name: p.name,
-      parameterType: { type: p.type },
-      parameterValue: { value: p.value },
-    }));
+  const queryParameters = params.map((parameter) => {
+    if (parameter.type === "ARRAY_STRING") {
+      return {
+        name: parameter.name,
+        parameterType: { type: "ARRAY", arrayType: { type: "STRING" } },
+        parameterValue: { arrayValues: parameter.value.map((value) => ({ value })) },
+      };
+    }
+    return {
+      name: parameter.name,
+      parameterType: { type: parameter.type },
+      parameterValue: { value: parameter.value },
+    };
+  });
 
   const body: Record<string, unknown> = {
     query,
@@ -3853,6 +3955,69 @@ export async function queryStripeThroughMrrCustomerArrFromBigQuery(
   const table = getStripeArrCorrectMrrChangeTable();
   const customersTable = getStripeCustomersTable();
   const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const productsTable = getStripeProductsTable(profile);
+  const pricesTable = getStripePricesTable(profile);
+  const baseSubscriptionOnly = request.baseSubscriptionOnly === true;
+  const baseSubscriptionCtes = baseSubscriptionOnly
+    ? `,
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    MAX(COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '')) AS product_name,
+    MAX(COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '')) AS product_description
+  FROM \`${productsTable}\`
+  GROUP BY product_id
+),
+prices_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.id')), ''), '(blank)') AS price_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.nickname')), ''), '')) AS price_nickname,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.lookup_key')), ''), '')) AS price_lookup_key,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.version')), ''), '')) AS metadata_version,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.plan_version')), ''), '')) AS metadata_plan_version
+  FROM (
+    SELECT TO_JSON_STRING(p) AS raw_json
+    FROM \`${pricesTable}\` p
+  )
+  GROUP BY price_id
+),
+described_events AS (
+  SELECT
+    es.*,
+    LOWER(
+      CONCAT(
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_nickname')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_description')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_name')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.price_nickname), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.price_lookup_key), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.metadata_version), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pr.metadata_plan_version), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.product_name')), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pl.product_name), ''), ''),
+        ' ', COALESCE(NULLIF(TRIM(pl.product_description), ''), ''),
+        ' '
+      )
+    ) AS plan_hints
+  FROM events_source es
+  LEFT JOIN products_lookup pl
+    ON pl.product_id = es.product_id
+  LEFT JOIN prices_lookup pr
+    ON pr.price_id = COALESCE(
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price.id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price')), ''),
+      '(blank)'
+    )
+)`
+    : "";
+  const eventsBaseSource = baseSubscriptionOnly ? "described_events" : "events_source";
+  const baseSubscriptionFilter = baseSubscriptionOnly
+    ? `
+  WHERE
+    REGEXP_CONTAINS(e.plan_hints, r'(^|[^a-z])(enterprise|managed|team|plus|pay\\s*as\\s*you\\s*go|payg|free)([^a-z]|$)')
+    AND NOT REGEXP_CONTAINS(e.plan_hints, r'add\\s*ons?|ai\\s+tokens?|conversation\\s+sessions?|web\\s+search\\s+and\\s+crawl')`
+    : "";
 
   const query = `
 WITH bounds AS (
@@ -3897,6 +4062,7 @@ events_source AS (
   SELECT
     t.event_timestamp,
     COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+    COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)') AS product_id,
     TO_JSON_STRING(t) AS raw_json,
     CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major
   FROM \`${table}\` AS t
@@ -3904,10 +4070,10 @@ events_source AS (
   WHERE
     LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
     AND t.event_timestamp < TIMESTAMP(b.requested_end_exclusive_date)
-),
+)${baseSubscriptionCtes},
 customer_ids_in_scope AS (
   SELECT DISTINCT customer_id
-  FROM events_source
+  FROM ${eventsBaseSource}
   WHERE customer_id <> '(blank)'
 ),
 customers_workspace_lookup AS (
@@ -3966,9 +4132,10 @@ events_base AS (
       ''
     ) AS workspace_id,
     e.mrr_change_major
-  FROM events_source e
+  FROM ${eventsBaseSource} e
   LEFT JOIN customers_lookup cl
     ON cl.customer_id = e.customer_id
+${baseSubscriptionFilter}
 ),
 customer_ids_by_key AS (
   SELECT
@@ -4360,12 +4527,10 @@ export async function queryStripeCustomerIdsByWorkspaceIdsFromBigQuery(
   const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
   const accessToken = await getAccessToken(sa);
   const customersMetadataTable = getStripeCustomersMetadataTable(profile);
-  const workspaceIdsSql = normalizedWorkspaceIds.map((id) => `'${escapeSqlString(id)}'`).join(", ");
-
   const query = `
 WITH requested_workspace_ids AS (
   SELECT workspace_id
-  FROM UNNEST([${workspaceIdsSql}]) AS workspace_id
+  FROM UNNEST(@workspace_ids) AS workspace_id
 )
 SELECT
   LOWER(COALESCE(NULLIF(TRIM(CAST(m.value AS STRING)), ''), '')) AS workspace_id,
@@ -4381,7 +4546,9 @@ GROUP BY workspace_id, customer_id
 ORDER BY workspace_id ASC, customer_id ASC
 `;
 
-  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, []);
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, [
+    { name: "workspace_ids", type: "ARRAY_STRING", value: normalizedWorkspaceIds },
+  ]);
   const mappings: StripeCustomerWorkspaceCustomerMapping[] = rows
     .map((row) => ({
       workspaceId: asString(row.workspace_id).trim().toLowerCase(),
@@ -4394,6 +4561,246 @@ ORDER BY workspace_id ASC, customer_id ASC
     workspaceIds: normalizedWorkspaceIds,
     customerIds,
     mappings,
+  };
+}
+
+export async function queryStripeManagedEarlyLifecycleActivityFromBigQuery(
+  request: {
+    workspaceIds: string[];
+    activityStartDate: string;
+    activityEndDate: string;
+    targetCurrency: string;
+    maxAgeDays?: number;
+  },
+  options?: StripeBigQueryOptions,
+): Promise<StripeManagedEarlyLifecycleActivityResult> {
+  const activityStart = parseIsoDateUtc(request.activityStartDate);
+  const activityEnd = parseIsoDateUtc(request.activityEndDate);
+  if (!activityStart || !activityEnd || activityEnd.getTime() < activityStart.getTime()) {
+    throw new Error("Invalid activityStartDate/activityEndDate");
+  }
+  const workspaceIds = Array.from(
+    new Set((request.workspaceIds || []).map((value) => normalizeWorkspaceIdToken(value)).filter(Boolean)),
+  ).sort();
+  if (!workspaceIds.length) return { rows: [] };
+
+  const profile = normalizeProfile(options?.profile);
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const eventsTable = getStripeArrCorrectMrrChangeTable();
+  const productsTable = getStripeProductsTable(profile);
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+  const maxAgeDays = Math.max(0, Math.min(365, Math.trunc(Number(request.maxAgeDays ?? 90))));
+
+  const query = `
+WITH workspace_customers AS (
+  SELECT
+    LOWER(TRIM(CAST(m.value AS STRING))) AS workspace_id,
+    CAST(m.customer_id AS STRING) AS customer_id
+  FROM \`${customersMetadataTable}\` m
+  WHERE LOWER(TRIM(CAST(m.\`key\` AS STRING))) = 'workspace_id'
+    AND LOWER(TRIM(CAST(m.value AS STRING))) IN UNNEST(@workspace_ids)
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY LOWER(TRIM(CAST(m.value AS STRING))), CAST(m.customer_id AS STRING)
+    ORDER BY CAST(m.batch_timestamp AS STRING) DESC
+  ) = 1
+),
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '') AS product_name,
+    COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '') AS product_description
+  FROM \`${productsTable}\`
+),
+classified_events AS (
+  SELECT
+    wc.workspace_id,
+    wc.customer_id,
+    t.event_timestamp,
+    CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major,
+    CASE
+      WHEN LOWER(CAST(t.product_id AS STRING)) = 'prod_m9gpcuhm0q9uzg' THEN 0
+      WHEN LOWER(CAST(t.product_id AS STRING)) = 'prod_pbflquwvpscoaw' THEN 1
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'enterprise') THEN 5
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'managed') THEN 4
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'(^|[^a-z])team([^a-z]|$)') THEN 3
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'(^|[^a-z])plus([^a-z]|$)') THEN 2
+      ELSE 0
+    END AS plan_rank
+  FROM \`${eventsTable}\` t
+  JOIN workspace_customers wc ON wc.customer_id = CAST(t.customer_id AS STRING)
+  LEFT JOIN products_lookup p
+    ON p.product_id = COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)')
+  WHERE LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
+    AND DATE(t.event_timestamp) <= DATE(@activity_end_date)
+),
+managed_deltas AS (
+  SELECT workspace_id, customer_id, event_timestamp, SUM(mrr_change_major) AS mrr_change_major
+  FROM classified_events
+  WHERE plan_rank >= 3
+  GROUP BY workspace_id, customer_id, event_timestamp
+),
+managed_balances AS (
+  SELECT
+    *,
+    COALESCE(SUM(mrr_change_major) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ), 0.0) AS balance_before,
+    COALESCE(SUM(mrr_change_major) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ), 0.0) AS balance_after
+  FROM managed_deltas
+),
+managed_segments AS (
+  SELECT
+    *,
+    MAX(IF(balance_before <= 1e-9 AND balance_after > 1e-9, event_timestamp, NULL)) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS managed_start_timestamp
+  FROM managed_balances
+),
+qualifying_activity AS (
+  SELECT
+    workspace_id,
+    customer_id,
+    DATE(managed_start_timestamp) AS managed_start_date,
+    MIN(DATE(event_timestamp)) AS activity_date
+  FROM managed_segments
+  WHERE mrr_change_major < -1e-9
+    AND balance_before > 1e-9
+    AND DATE(event_timestamp) BETWEEN DATE(@activity_start_date) AND DATE(@activity_end_date)
+    AND DATE_DIFF(DATE(event_timestamp), DATE(managed_start_timestamp), DAY) BETWEEN 0 AND @max_age_days
+  GROUP BY workspace_id, customer_id, managed_start_date
+)
+SELECT workspace_id, customer_id, managed_start_date, activity_date
+FROM qualifying_activity
+ORDER BY workspace_id, customer_id
+`;
+  const params: BigQueryNamedParameter[] = [
+    { name: "workspace_ids", type: "ARRAY_STRING", value: workspaceIds },
+    { name: "activity_start_date", type: "STRING", value: request.activityStartDate },
+    { name: "activity_end_date", type: "STRING", value: request.activityEndDate },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+    { name: "max_age_days", type: "INT64", value: String(maxAgeDays) },
+  ];
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, params);
+  return {
+    rows: rows.map((row) => ({
+      workspaceId: asString(row.workspace_id),
+      customerId: asString(row.customer_id),
+      managedStartDate: asString(row.managed_start_date),
+      activityDate: asString(row.activity_date),
+    })),
+  };
+}
+
+export async function queryStripeOpeningBoundaryRefundsFromBigQuery(
+  request: {
+    workspaceIds: string[];
+    openingSnapshotDate: string;
+    targetCurrency: string;
+  },
+  options?: StripeBigQueryOptions,
+): Promise<StripeOpeningBoundaryRefundResult> {
+  const openingSnapshot = parseIsoDateUtc(request.openingSnapshotDate);
+  if (!openingSnapshot) throw new Error("Invalid openingSnapshotDate");
+  const workspaceIds = Array.from(
+    new Set((request.workspaceIds || []).map((value) => normalizeWorkspaceIdToken(value)).filter(Boolean)),
+  ).sort();
+  if (!workspaceIds.length) return { rows: [] };
+
+  const profile = normalizeProfile(options?.profile);
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const chargesTable = getStripeChargesTable(profile);
+  const invoicesTable = "botpress-stripe-data-pipeline.stripe.invoices";
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+
+  const query = `
+WITH workspace_customers AS (
+  SELECT
+    LOWER(TRIM(CAST(m.value AS STRING))) AS workspace_id,
+    CAST(m.customer_id AS STRING) AS customer_id
+  FROM \`${customersMetadataTable}\` m
+  WHERE LOWER(TRIM(CAST(m.\`key\` AS STRING))) = 'workspace_id'
+    AND LOWER(TRIM(CAST(m.value AS STRING))) IN UNNEST(@workspace_ids)
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY LOWER(TRIM(CAST(m.value AS STRING))), CAST(m.customer_id AS STRING)
+    ORDER BY CAST(m.batch_timestamp AS STRING) DESC
+  ) = 1
+),
+latest_invoices AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      i.*,
+      ROW_NUMBER() OVER (PARTITION BY i.id ORDER BY i.batch_timestamp DESC) AS rn
+    FROM \`${invoicesTable}\` i
+    JOIN workspace_customers wc ON wc.customer_id = CAST(i.customer_id AS STRING)
+    WHERE DATE(i.date) = DATE(@opening_snapshot_date)
+      AND LOWER(COALESCE(CAST(i.currency AS STRING), '')) = @target_currency
+  )
+  WHERE rn = 1
+),
+latest_charges AS (
+  SELECT raw_json
+  FROM (
+    SELECT
+      TO_JSON_STRING(c) AS raw_json,
+      ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY c.batch_timestamp DESC) AS rn
+    FROM \`${chargesTable}\` c
+    WHERE CAST(c.customer_id AS STRING) IN (SELECT customer_id FROM workspace_customers)
+  )
+  WHERE rn = 1
+),
+charge_refunds AS (
+  SELECT
+    COALESCE(
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice')), ''),
+      NULLIF(TRIM(JSON_VALUE(raw_json, '$.invoice.id')), '')
+    ) AS invoice_id,
+    SUM(GREATEST(COALESCE(SAFE_CAST(JSON_VALUE(raw_json, '$.amount_refunded') AS FLOAT64), 0), 0)) AS amount_refunded
+  FROM latest_charges
+  GROUP BY invoice_id
+)
+SELECT DISTINCT
+  wc.workspace_id,
+  wc.customer_id,
+  CAST(i.id AS STRING) AS invoice_id
+FROM latest_invoices i
+JOIN workspace_customers wc ON wc.customer_id = CAST(i.customer_id AS STRING)
+JOIN charge_refunds r ON r.invoice_id = CAST(i.id AS STRING)
+WHERE LOWER(TRIM(COALESCE(CAST(i.status AS STRING), ''))) = 'paid'
+  AND COALESCE(i.amount_paid, 0) > 0
+  AND COALESCE(r.amount_refunded, 0) >= COALESCE(i.amount_paid, 0)
+ORDER BY workspace_id, customer_id, invoice_id
+`;
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, [
+    { name: "workspace_ids", type: "ARRAY_STRING", value: workspaceIds },
+    { name: "opening_snapshot_date", type: "STRING", value: request.openingSnapshotDate },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+  ]);
+  return {
+    rows: rows.map((row) => ({
+      workspaceId: asString(row.workspace_id),
+      customerId: asString(row.customer_id),
+      invoiceId: asString(row.invoice_id),
+    })),
   };
 }
 
@@ -4709,6 +5116,564 @@ ORDER BY cbs.customer_key ASC, b.bucket_start ASC
       plan: (asString(row.plan) || "free") as StripeThroughMrrCustomerPlan,
       arr: asNumber(row.arr),
     })),
+  };
+}
+
+export async function queryStripeLegacyToV4MigrationsFromBigQuery(
+  request: StripeLegacyToV4MigrationRequest,
+  options?: StripeBigQueryOptions,
+): Promise<StripeLegacyToV4MigrationResult> {
+  const startDate = parseIsoDateUtc(request.startDate);
+  const endDate = parseIsoDateUtc(request.endDate);
+  if (!startDate || !endDate || endDate.getTime() < startDate.getTime()) {
+    throw new Error("Invalid startDate/endDate");
+  }
+
+  const startDateIso = startDate.toISOString().slice(0, 10);
+  const endDateIso = endDate.toISOString().slice(0, 10);
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+  const profile = normalizeProfile(options?.profile || "stripe_arr_correct");
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const table = getStripeArrCorrectMrrChangeTable();
+  const productsTable = getStripeProductsTable(profile);
+  const pricesTable = getStripePricesTable(profile);
+  const customersTable = getStripeCustomersTable();
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+
+  const query = `
+WITH bounds AS (
+  SELECT
+    DATE(@start_date) AS migration_start_date,
+    DATE(@end_date) AS migration_end_date,
+    DATE_ADD(DATE(@end_date), INTERVAL 1 DAY) AS migration_end_exclusive_date
+),
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    MAX(COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '')) AS product_name,
+    MAX(COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '')) AS product_description
+  FROM \`${productsTable}\`
+  GROUP BY product_id
+),
+prices_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.id')), ''), '(blank)') AS price_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.nickname')), ''), '')) AS price_nickname,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.lookup_key')), ''), '')) AS price_lookup_key,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.version')), ''), '')) AS metadata_version,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.plan_version')), ''), '')) AS metadata_plan_version
+  FROM (
+    SELECT TO_JSON_STRING(p) AS raw_json
+    FROM \`${pricesTable}\` p
+  )
+  GROUP BY price_id
+),
+events_source AS (
+  SELECT
+    t.event_timestamp,
+    COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+    COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)') AS product_id,
+    CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major,
+    TO_JSON_STRING(t) AS raw_json
+  FROM \`${table}\` t
+  CROSS JOIN bounds b
+  WHERE
+    LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
+    AND t.event_timestamp < TIMESTAMP(b.migration_end_exclusive_date)
+    AND COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') <> '(blank)'
+),
+described_events AS (
+  SELECT
+    es.event_timestamp,
+    es.customer_id,
+    es.mrr_change_major,
+    LOWER(
+      CONCAT(
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_nickname')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_description')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_name')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.price_nickname), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.price_lookup_key), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.metadata_version), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.metadata_plan_version), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.product_name')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pl.product_name), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pl.product_description), ''), ''),
+        ' '
+      )
+    ) AS plan_hints
+  FROM events_source es
+  LEFT JOIN products_lookup pl
+    ON pl.product_id = es.product_id
+  LEFT JOIN prices_lookup pr
+    ON pr.price_id = COALESCE(
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price.id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price')), ''),
+      '(blank)'
+    )
+),
+classified_events AS (
+  SELECT
+    event_timestamp,
+    customer_id,
+    mrr_change_major,
+    CASE
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v4([^a-z0-9]|$)') THEN 'v4'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v3([^a-z0-9]|$)') THEN 'v3'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v2([^a-z0-9]|$)') THEN 'v2'
+      ELSE 'other'
+    END AS plan_version,
+    CASE
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])enterprise([^a-z]|$)') THEN 'Enterprise'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])managed([^a-z]|$)') THEN 'Managed'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])team([^a-z]|$)') THEN 'Team'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])plus([^a-z]|$)') THEN 'Plus'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])(pay\\s*as\\s*you\\s*go|payg)([^a-z]|$)') THEN 'Pay As You Go'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])free([^a-z]|$)') THEN 'Free'
+      ELSE 'Plan'
+    END AS plan_name
+  FROM described_events
+  WHERE
+    REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])(enterprise|managed|team|plus|pay\\s*as\\s*you\\s*go|payg|free)([^a-z]|$)')
+    AND NOT REGEXP_CONTAINS(plan_hints, r'add\\s*ons?|ai\\s+tokens?|conversation\\s+sessions?|web\\s+search\\s+and\\s+crawl')
+),
+daily_plan_changes AS (
+  SELECT
+    customer_id,
+    DATE(event_timestamp) AS event_date,
+    COALESCE(SUM(IF(plan_version IN ('v2', 'v3'), mrr_change_major, 0.0)), 0.0) AS legacy_delta_mrr,
+    COALESCE(SUM(IF(plan_version = 'v4', mrr_change_major, 0.0)), 0.0) AS v4_delta_mrr
+  FROM classified_events
+  GROUP BY customer_id, event_date
+),
+daily_balances AS (
+  SELECT
+    customer_id,
+    event_date,
+    legacy_delta_mrr,
+    v4_delta_mrr,
+    SUM(legacy_delta_mrr) OVER (
+      PARTITION BY customer_id
+      ORDER BY event_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS legacy_after_mrr,
+    SUM(v4_delta_mrr) OVER (
+      PARTITION BY customer_id
+      ORDER BY event_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS v4_after_mrr
+  FROM daily_plan_changes
+),
+migration_candidates AS (
+  SELECT
+    db.customer_id,
+    db.event_date AS migrated_at,
+    db.legacy_after_mrr - db.legacy_delta_mrr AS legacy_before_mrr,
+    db.v4_after_mrr AS v4_after_mrr
+  FROM daily_balances db
+  CROSS JOIN bounds b
+  WHERE
+    db.event_date >= b.migration_start_date
+    AND db.event_date <= b.migration_end_date
+    AND db.legacy_after_mrr - db.legacy_delta_mrr > 1e-9
+    AND db.v4_after_mrr - db.v4_delta_mrr <= 1e-9
+    AND db.v4_after_mrr > 1e-9
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY db.customer_id ORDER BY db.event_date ASC) = 1
+),
+plan_balances_at_migration AS (
+  SELECT
+    mc.customer_id,
+    mc.migrated_at,
+    ce.plan_version,
+    ce.plan_name,
+    SUM(IF(DATE(ce.event_timestamp) < mc.migrated_at, ce.mrr_change_major, 0.0)) AS before_mrr,
+    SUM(ce.mrr_change_major) AS current_mrr
+  FROM migration_candidates mc
+  JOIN classified_events ce
+    ON ce.customer_id = mc.customer_id
+  GROUP BY mc.customer_id, mc.migrated_at, ce.plan_version, ce.plan_name
+),
+migration_plan_labels AS (
+  SELECT
+    customer_id,
+    COALESCE(
+      STRING_AGG(
+        DISTINCT IF(
+          plan_version IN ('v2', 'v3') AND before_mrr > 1e-9,
+          CONCAT(plan_name, ' (', UPPER(plan_version), ')'),
+          NULL
+        ),
+        ' + '
+        ORDER BY IF(
+          plan_version IN ('v2', 'v3') AND before_mrr > 1e-9,
+          CONCAT(plan_name, ' (', UPPER(plan_version), ')'),
+          NULL
+        )
+      ),
+      'V2/V3 plan'
+    ) AS previous_plan,
+    COALESCE(
+      STRING_AGG(
+        DISTINCT IF(
+          plan_version IN ('v2', 'v3', 'v4') AND current_mrr > 1e-9,
+          CONCAT(plan_name, ' (', UPPER(plan_version), ')'),
+          NULL
+        ),
+        ' + '
+        ORDER BY IF(
+          plan_version IN ('v2', 'v3', 'v4') AND current_mrr > 1e-9,
+          CONCAT(plan_name, ' (', UPPER(plan_version), ')'),
+          NULL
+        )
+      ),
+      'No active plan'
+    ) AS current_plan
+  FROM plan_balances_at_migration
+  GROUP BY customer_id
+),
+customers_workspace_lookup AS (
+  SELECT customer_id, workspace_id
+  FROM (
+    SELECT
+      COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+      COALESCE(NULLIF(TRIM(CAST(m.value AS STRING)), ''), '') AS workspace_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)')
+        ORDER BY COALESCE(NULLIF(TRIM(CAST(m.batch_timestamp AS STRING)), ''), '') DESC
+      ) AS rn
+    FROM \`${customersMetadataTable}\` m
+    WHERE
+      LOWER(COALESCE(NULLIF(TRIM(CAST(m.\`key\` AS STRING)), ''), '')) = 'workspace_id'
+      AND COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)') IN (
+        SELECT customer_id FROM migration_candidates
+      )
+  )
+  WHERE rn = 1
+),
+customers_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(c.id AS STRING)), ''), '(blank)') AS customer_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(TO_JSON_STRING(c), '$.name')), ''), '')) AS customer_name,
+    MAX(COALESCE(NULLIF(TRIM(CAST(c.email AS STRING)), ''), '')) AS customer_email
+  FROM \`${customersTable}\` c
+  WHERE COALESCE(NULLIF(TRIM(CAST(c.id AS STRING)), ''), '(blank)') IN (
+    SELECT customer_id FROM migration_candidates
+  )
+  GROUP BY customer_id
+)
+SELECT
+  mc.customer_id,
+  COALESCE(NULLIF(cl.customer_name, ''), NULLIF(cl.customer_email, ''), mc.customer_id) AS customer_name,
+  COALESCE(cl.customer_email, '') AS customer_email,
+  COALESCE(cwl.workspace_id, '') AS workspace_id,
+  FORMAT_DATE('%Y-%m-%d', mc.migrated_at) AS migrated_at,
+  COALESCE(mpl.previous_plan, 'V2/V3 plan') AS previous_plan,
+  COALESCE(mpl.current_plan, 'No active plan') AS current_plan,
+  ROUND(mc.legacy_before_mrr * 12.0, 2) AS migrated_arr,
+  ROUND(mc.legacy_before_mrr * 12.0, 2) AS legacy_arr_before,
+  ROUND(mc.v4_after_mrr * 12.0, 2) AS v4_arr_after
+FROM migration_candidates mc
+LEFT JOIN customers_workspace_lookup cwl
+  ON cwl.customer_id = mc.customer_id
+LEFT JOIN customers_lookup cl
+  ON cl.customer_id = mc.customer_id
+LEFT JOIN migration_plan_labels mpl
+  ON mpl.customer_id = mc.customer_id
+ORDER BY mc.migrated_at DESC, customer_name ASC
+`;
+
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, [
+    { name: "start_date", type: "STRING", value: startDateIso },
+    { name: "end_date", type: "STRING", value: endDateIso },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+  ]);
+
+  return {
+    startDate: startDateIso,
+    endDate: endDateIso,
+    targetCurrency: targetCurrency.toUpperCase(),
+    rows: rows.map((row) => ({
+      customerId: asString(row.customer_id),
+      customerName: asString(row.customer_name),
+      customerEmail: asString(row.customer_email),
+      workspaceId: asString(row.workspace_id),
+      migratedAt: asString(row.migrated_at),
+      previousPlan: asString(row.previous_plan),
+      currentPlan: asString(row.current_plan),
+      migratedArr: asNumber(row.migrated_arr),
+      legacyArrBefore: asNumber(row.legacy_arr_before),
+      v4ArrAfter: asNumber(row.v4_arr_after),
+    })),
+  };
+}
+
+export async function queryStripeLegacyPlanPopulationFromBigQuery(
+  request: StripeLegacyPlanPopulationRequest,
+  options?: StripeBigQueryOptions,
+): Promise<StripeLegacyPlanPopulationResult> {
+  const fiscalYearStart = parseIsoDateUtc(request.fiscalYearStart);
+  const asOfDate = parseIsoDateUtc(request.asOfDate);
+  if (!fiscalYearStart || !asOfDate || asOfDate.getTime() < fiscalYearStart.getTime()) {
+    throw new Error("Invalid fiscalYearStart/asOfDate");
+  }
+
+  const fiscalYearStartIso = fiscalYearStart.toISOString().slice(0, 10);
+  const asOfDateIso = asOfDate.toISOString().slice(0, 10);
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+  const profile = normalizeProfile(options?.profile || "stripe_arr_correct");
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const table = getStripeArrCorrectMrrChangeTable();
+  const productsTable = getStripeProductsTable(profile);
+  const pricesTable = getStripePricesTable(profile);
+  const customersTable = getStripeCustomersTable();
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+
+  const query = `
+WITH bounds AS (
+  SELECT
+    DATE(@fiscal_year_start) AS fiscal_year_start,
+    DATE_ADD(DATE(@as_of_date), INTERVAL 1 DAY) AS current_end_exclusive
+),
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    MAX(COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '')) AS product_name,
+    MAX(COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '')) AS product_description
+  FROM \`${productsTable}\`
+  GROUP BY product_id
+),
+prices_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.id')), ''), '(blank)') AS price_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.nickname')), ''), '')) AS price_nickname,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.lookup_key')), ''), '')) AS price_lookup_key,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.version')), ''), '')) AS metadata_version,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.metadata.plan_version')), ''), '')) AS metadata_plan_version
+  FROM (
+    SELECT TO_JSON_STRING(p) AS raw_json
+    FROM \`${pricesTable}\` p
+  )
+  GROUP BY price_id
+),
+events_source AS (
+  SELECT
+    t.event_timestamp,
+    COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+    COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)') AS product_id,
+    CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major,
+    TO_JSON_STRING(t) AS raw_json
+  FROM \`${table}\` t
+  CROSS JOIN bounds b
+  WHERE
+    LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
+    AND t.event_timestamp < TIMESTAMP(b.current_end_exclusive)
+    AND COALESCE(NULLIF(TRIM(CAST(t.customer_id AS STRING)), ''), '(blank)') <> '(blank)'
+),
+described_events AS (
+  SELECT
+    es.event_timestamp,
+    es.customer_id,
+    es.mrr_change_major,
+    LOWER(
+      CONCAT(
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_nickname')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_description')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_name')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.price_nickname), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.price_lookup_key), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.metadata_version), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pr.metadata_plan_version), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.product_name')), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pl.product_name), ''), ''),
+        ' ',
+        COALESCE(NULLIF(TRIM(pl.product_description), ''), ''),
+        ' '
+      )
+    ) AS plan_hints
+  FROM events_source es
+  LEFT JOIN products_lookup pl
+    ON pl.product_id = es.product_id
+  LEFT JOIN prices_lookup pr
+    ON pr.price_id = COALESCE(
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price_id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price.id')), ''),
+      NULLIF(TRIM(JSON_VALUE(es.raw_json, '$.price')), ''),
+      '(blank)'
+    )
+),
+classified_events AS (
+  SELECT
+    event_timestamp,
+    customer_id,
+    mrr_change_major,
+    CASE
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v4([^a-z0-9]|$)') THEN 'v4'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v3([^a-z0-9]|$)') THEN 'v3'
+      WHEN REGEXP_CONTAINS(plan_hints, r'(^|[^a-z0-9])v2([^a-z0-9]|$)') THEN 'v2'
+      ELSE 'other'
+    END AS plan_version
+  FROM described_events
+  WHERE
+    REGEXP_CONTAINS(plan_hints, r'(^|[^a-z])(enterprise|managed|team|plus|pay\\s*as\\s*you\\s*go|payg|free)([^a-z]|$)')
+    AND NOT REGEXP_CONTAINS(plan_hints, r'add\\s*ons?|ai\\s+tokens?|conversation\\s+sessions?|web\\s+search\\s+and\\s+crawl')
+),
+customer_ids AS (
+  SELECT DISTINCT customer_id FROM classified_events
+),
+workspace_lookup AS (
+  SELECT customer_id, workspace_id
+  FROM (
+    SELECT
+      COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)') AS customer_id,
+      LOWER(COALESCE(NULLIF(TRIM(CAST(m.value AS STRING)), ''), '')) AS workspace_id,
+      ROW_NUMBER() OVER (
+        PARTITION BY COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)')
+        ORDER BY COALESCE(NULLIF(TRIM(CAST(m.batch_timestamp AS STRING)), ''), '') DESC
+      ) AS rn
+    FROM \`${customersMetadataTable}\` m
+    WHERE
+      LOWER(COALESCE(NULLIF(TRIM(CAST(m.\`key\` AS STRING)), ''), '')) = 'workspace_id'
+      AND COALESCE(NULLIF(TRIM(CAST(m.customer_id AS STRING)), ''), '(blank)') IN (
+        SELECT customer_id FROM customer_ids
+      )
+  )
+  WHERE rn = 1
+),
+customers_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(c.id AS STRING)), ''), '(blank)') AS customer_id,
+    MAX(COALESCE(NULLIF(TRIM(JSON_VALUE(TO_JSON_STRING(c), '$.name')), ''), '')) AS customer_name,
+    MAX(LOWER(COALESCE(NULLIF(TRIM(CAST(c.email AS STRING)), ''), ''))) AS customer_email
+  FROM \`${customersTable}\` c
+  WHERE COALESCE(NULLIF(TRIM(CAST(c.id AS STRING)), ''), '(blank)') IN (
+    SELECT customer_id FROM customer_ids
+  )
+  GROUP BY customer_id
+),
+customer_balances AS (
+  SELECT
+    ce.customer_id,
+    COALESCE(NULLIF(wl.workspace_id, ''), CONCAT('customer:', ce.customer_id)) AS customer_key,
+    COALESCE(wl.workspace_id, '') AS workspace_id,
+    COALESCE(cl.customer_name, '') AS customer_name,
+    COALESCE(cl.customer_email, '') AS customer_email,
+    SUM(IF(
+      ce.event_timestamp < TIMESTAMP(b.fiscal_year_start) AND ce.plan_version IN ('v2', 'v3'),
+      ce.mrr_change_major,
+      0.0
+    )) AS opening_legacy_mrr,
+    SUM(IF(
+      ce.event_timestamp < TIMESTAMP(b.fiscal_year_start) AND ce.plan_version = 'v4',
+      ce.mrr_change_major,
+      0.0
+    )) AS opening_v4_mrr,
+    SUM(IF(ce.plan_version IN ('v2', 'v3'), ce.mrr_change_major, 0.0)) AS current_legacy_mrr,
+    SUM(IF(ce.plan_version = 'v4', ce.mrr_change_major, 0.0)) AS current_v4_mrr
+  FROM classified_events ce
+  CROSS JOIN bounds b
+  LEFT JOIN workspace_lookup wl
+    ON wl.customer_id = ce.customer_id
+  LEFT JOIN customers_lookup cl
+    ON cl.customer_id = ce.customer_id
+  GROUP BY ce.customer_id, customer_key, workspace_id, customer_name, customer_email
+),
+workspace_balances AS (
+  SELECT
+    customer_key,
+    STRING_AGG(DISTINCT customer_id, ' | ' ORDER BY customer_id) AS customer_ids,
+    COALESCE(NULLIF(MAX(workspace_id), ''), '') AS workspace_id,
+    COALESCE(STRING_AGG(DISTINCT NULLIF(customer_name, ''), ' | ' ORDER BY NULLIF(customer_name, '')), '') AS customer_name,
+    COALESCE(STRING_AGG(DISTINCT NULLIF(customer_email, ''), ' | ' ORDER BY NULLIF(customer_email, '')), '') AS customer_email,
+    SUM(opening_legacy_mrr) AS opening_legacy_mrr,
+    SUM(opening_v4_mrr) AS opening_v4_mrr,
+    SUM(current_legacy_mrr) AS current_legacy_mrr,
+    SUM(current_v4_mrr) AS current_v4_mrr
+  FROM customer_balances
+  GROUP BY customer_key
+)
+SELECT
+  customer_key,
+  customer_ids,
+  customer_name,
+  customer_email,
+  workspace_id,
+  opening_legacy_mrr > 1e-9 AND opening_v4_mrr <= 1e-9 AS is_opening,
+  ROUND(IF(opening_legacy_mrr > 1e-9 AND opening_v4_mrr <= 1e-9, opening_legacy_mrr, 0.0) * 12.0, 2) AS opening_arr,
+  current_legacy_mrr > 1e-9 AND current_v4_mrr <= 1e-9 AS is_current,
+  ROUND(IF(current_legacy_mrr > 1e-9 AND current_v4_mrr <= 1e-9, current_legacy_mrr, 0.0) * 12.0, 2) AS current_arr
+FROM workspace_balances
+WHERE
+  (opening_legacy_mrr > 1e-9 AND opening_v4_mrr <= 1e-9)
+  OR (current_legacy_mrr > 1e-9 AND current_v4_mrr <= 1e-9)
+ORDER BY customer_name, customer_ids
+`;
+
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, [
+    { name: "fiscal_year_start", type: "STRING", value: fiscalYearStartIso },
+    { name: "as_of_date", type: "STRING", value: asOfDateIso },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+  ]);
+  const openingCustomers = rows
+    .filter((row) => asString(row.is_opening).toLowerCase() === "true")
+    .map((row) => ({
+      customerId: asString(row.customer_ids),
+      customerName: asString(row.customer_name) || asString(row.customer_ids),
+      customerEmail: asString(row.customer_email),
+      workspaceId: asString(row.workspace_id),
+      arr: asNumber(row.opening_arr),
+    }));
+  const currentCustomers = rows
+    .filter((row) => asString(row.is_current).toLowerCase() === "true")
+    .map((row) => ({
+      customerId: asString(row.customer_ids),
+      customerName: asString(row.customer_name) || asString(row.customer_ids),
+      customerEmail: asString(row.customer_email),
+      workspaceId: asString(row.workspace_id),
+      arr: asNumber(row.current_arr),
+    }));
+
+  return {
+    fiscalYearStart: fiscalYearStartIso,
+    asOfDate: asOfDateIso,
+    targetCurrency: targetCurrency.toUpperCase(),
+    opening: {
+      customers: openingCustomers.length,
+      arr: round2(openingCustomers.reduce((sum, row) => sum + row.arr, 0)),
+    },
+    current: {
+      customers: currentCustomers.length,
+      arr: round2(currentCustomers.reduce((sum, row) => sum + row.arr, 0)),
+    },
+    openingCustomers,
+    currentCustomers,
   };
 }
 
@@ -9584,6 +10549,69 @@ export async function runBigQuerySqlStatement(
   options?: StripeBigQueryOptions,
 ) {
   await runBigQuerySqlRows(query, params, options);
+}
+
+export type BigQueryStartedJob = {
+  projectId: string;
+  jobId: string;
+  location: string;
+};
+
+export async function startBigQuerySqlStatement(
+  query: string,
+  params: BigQuerySqlParameter[] = [],
+  options?: StripeBigQueryOptions,
+): Promise<BigQueryStartedJob> {
+  const profile = normalizeProfile(options?.profile);
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const queryParameters = params.map((parameter) => ({
+    name: parameter.name,
+    parameterType: { type: parameter.type },
+    parameterValue: { value: parameter.value },
+  }));
+
+  const response = await fetch(
+    `https://bigquery.googleapis.com/bigquery/v2/projects/${encodeURIComponent(projectId)}/jobs`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jobReference: { projectId, location },
+        configuration: {
+          query: {
+            query,
+            useLegacySql: false,
+            parameterMode: "NAMED",
+            queryParameters,
+          },
+        },
+      }),
+      cache: "no-store",
+    },
+  );
+  const text = await response.text();
+  if (!response.ok) throw new Error(`BigQuery start job error ${response.status}: ${text}`);
+  const payload = JSON.parse(text) as {
+    jobReference?: { projectId?: string; jobId?: string; location?: string };
+    status?: { errorResult?: { message?: string } };
+  };
+  if (payload.status?.errorResult) {
+    throw new Error(payload.status.errorResult.message || "BigQuery rejected the query job");
+  }
+  const jobId = String(payload.jobReference?.jobId || "").trim();
+  if (!jobId) throw new Error("BigQuery did not return a job ID");
+  return {
+    projectId: String(payload.jobReference?.projectId || projectId),
+    jobId,
+    location: String(payload.jobReference?.location || location),
+  };
 }
 
 export async function insertBigQueryRows(params: {

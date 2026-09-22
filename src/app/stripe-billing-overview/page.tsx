@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadSvgAsPng } from "@/lib/chartDownload";
+import DraftInvoiceAdminControls from "./DraftInvoiceAdminControls";
 
 type Grain = "daily" | "weekly" | "monthly" | "quarterly";
 type ChartGroupBy = "none" | "product_id" | "price_id" | "subscription_item_id" | "subscription_id" | "customer_id";
@@ -1435,25 +1435,10 @@ export default function StripeBillingOverviewPage() {
               MRR transitions from Stripe MRR change events.
             </p>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <Link href="/combined-all-subs" className="stripe-ui__hero-link">
-              Open Combined All Subs
-            </Link>
-            <Link href="/stripe-through-mrr" className="stripe-ui__hero-link">
-              Open Stripe through MRR
-            </Link>
-            <Link href="/hubspot" className="stripe-ui__hero-link">
-              Open HubSpot report
-            </Link>
-            <Link href="/ai-spend" className="stripe-ui__hero-link">
-              Open AI spend
-            </Link>
-            <Link href="/quickbooks" className="stripe-ui__hero-link">
-              Open QuickBooks
-            </Link>
-          </div>
         </div>
       </section>
+
+      <DraftInvoiceAdminControls />
 
       <section className="stripe-ui__panel ui-reveal ui-reveal-1">
         <h2 className="stripe-ui__panel-title">Controls</h2>

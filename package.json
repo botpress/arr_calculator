@@ -6,14 +6,25 @@
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:access": "node --experimental-strip-types --test tests/accessRoles.test.mjs",
+    "test:account-management": "node --experimental-strip-types --test tests/accountManagementRules.test.mjs",
+    "test:commissions": "node --experimental-strip-types --test tests/commissions.test.mjs",
+    "test:billing-drafts": "node --experimental-strip-types --test tests/monthlyDraftInvoiceRules.test.mjs",
+    "test:customer-history": "node --experimental-strip-types --test tests/customerMonthlyHistory.test.mjs",
+    "test:migration": "node --experimental-strip-types --test tests/migrationRules.test.mjs",
+    "test:quota": "node --experimental-strip-types --test tests/salesQuotaRules.test.mjs",
+    "test:gtm": "node --experimental-strip-types --test tests/gtm*.test.mjs",
+    "test:scorecards": "node --experimental-strip-types --test tests/teamScorecardDefinitions.test.mjs",
+    "test:tv-auth": "node --experimental-strip-types --test tests/tvDashboardAuth.test.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.3.1",
     "next": "16.1.6",
     "next-auth": "^4.24.14",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "stripe": "^22.6.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
