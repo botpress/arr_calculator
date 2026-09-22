@@ -1,5 +1,6 @@
 import {
   ACCOUNT_MANAGER_CONFIGS,
+  accountManagementDisplayCompanyIds,
   accountManagementQuarterWindow,
   calculateRetentionMetricsWithExclusions,
   fillZeroArrFromStripe,
@@ -535,11 +536,18 @@ export async function generateAccountManagementReport(
   const accountsByOwnerId = new Map<string, AccountManagementAccountRow[]>(
     ACCOUNT_MANAGER_CONFIGS.map((owner) => [owner.ownerId, []]),
   );
+  const displayCompanyIds = accountManagementDisplayCompanyIds(
+    Array.from(revenueByCompany.entries()).map(([companyId, carr]) => ({
+      companyId,
+      previousArr: carr.previousArr,
+      currentArr: carr.currentArr,
+    })),
+    eligibleCompanyIds,
+  );
 
-  for (const [companyId, candidates] of candidatesByCompany.entries()) {
-    if (!eligibleCompanyIds.has(companyId)) continue;
+  for (const companyId of displayCompanyIds) {
     const carr = revenueByCompany.get(companyId) || emptyCompanyCarr();
-    if (!hasArrAtEitherQuarterEnd(carr)) continue;
+    const candidates = candidatesByCompany.get(companyId) || carrCandidatesByCompany.get(companyId) || [];
     const ownerId = String(companiesById.get(companyId)?.csmOwnerId || "").trim();
     if (!accountsByOwnerId.has(ownerId)) continue;
     const companyName =
@@ -608,10 +616,11 @@ export async function generateAccountManagementReport(
   }
 
   const teamOwnerIds = new Set(ACCOUNT_MANAGER_CONFIGS.map((owner) => owner.ownerId));
-  const outsideDrafts = Array.from(revenueByCompany.entries())
+  const outsideDrafts = displayCompanyIds
+    .map((companyId) => [companyId, revenueByCompany.get(companyId) || emptyCompanyCarr()] as const)
     .filter(([companyId, carr]) => {
       const ownerId = String(companiesById.get(companyId)?.csmOwnerId || "").trim();
-      return eligibleCompanyIds.has(companyId) && carr.previousArr > 0 && !teamOwnerIds.has(ownerId);
+      return carr.previousArr > 0 && !teamOwnerIds.has(ownerId);
     })
     .map(([companyId, carr]) => {
       const candidates = candidatesByCompany.get(companyId) || carrCandidatesByCompany.get(companyId) || [];

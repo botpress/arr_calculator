@@ -32,6 +32,20 @@ export type RetentionMetrics = {
   nrrPct: number | null;
 };
 
+export function accountManagementDisplayCompanyIds(
+  accounts: Array<{ companyId: string; previousArr: number; currentArr: number }>,
+  eligibleCompanyIds: Iterable<string>,
+) {
+  const eligible = new Set(eligibleCompanyIds);
+  return (accounts || [])
+    .filter(
+      (account) =>
+        eligible.has(String(account.companyId || "")) &&
+        (Number(account.previousArr || 0) !== 0 || Number(account.currentArr || 0) !== 0),
+    )
+    .map((account) => String(account.companyId || ""));
+}
+
 export function fillZeroArrFromStripe(
   hubspot: RetentionAccountInput,
   stripe: RetentionAccountInput | null | undefined,

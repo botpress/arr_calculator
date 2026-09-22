@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  accountManagementDisplayCompanyIds,
   annualizeQuarterlyNrrPct,
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
@@ -16,6 +17,21 @@ import {
   retentionExclusionReason,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
+
+test("builds displayed account IDs from eligible revenue accounts rather than deal candidates", () => {
+  assert.deepEqual(
+    accountManagementDisplayCompanyIds(
+      [
+        { companyId: "deal-linked", previousArr: 100, currentArr: 100 },
+        { companyId: "revenue-only", previousArr: 80, currentArr: 80 },
+        { companyId: "zero-arr", previousArr: 0, currentArr: 0 },
+        { companyId: "ineligible", previousArr: 50, currentArr: 50 },
+      ],
+      new Set(["deal-linked", "revenue-only", "zero-arr"]),
+    ),
+    ["deal-linked", "revenue-only"],
+  );
+});
 
 test("annualizes quarterly NRR by compounding four quarters", () => {
   assert.equal(annualizeQuarterlyNrrPct(90), 65.61);
