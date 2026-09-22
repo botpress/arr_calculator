@@ -218,6 +218,16 @@ export async function generateAccountManagementReport(
     }
   }
 
+  for (const company of warehouse.companies) {
+    for (const workspaceId of company.workspaceIds) {
+      const normalizedWorkspaceId = normalizeWorkspaceId(workspaceId);
+      if (!normalizedWorkspaceId) continue;
+      if (!companyIdsByWorkspaceId.has(normalizedWorkspaceId)) {
+        companyIdsByWorkspaceId.set(normalizedWorkspaceId, new Set([company.companyId]));
+      }
+    }
+  }
+
   if (missingTransactionalCompanyCount) {
     warnings.add(
       `${missingTransactionalCompanyCount} Transactional Team deal${missingTransactionalCompanyCount === 1 ? " was" : "s were"} excluded because no HubSpot company was associated.`,
@@ -386,6 +396,22 @@ export async function generateAccountManagementReport(
       if (!matchingCompanyIds.length && stripeOnlyCompanyId) matchingCompanyIds.push(stripeOnlyCompanyId);
       if (!matchingCompanyIds.length) continue;
       const companyId = matchingCompanyIds[0];
+      if (
+        isManagedAccountPlan(row.plan) &&
+        Number(row.arr || 0) > 0 &&
+        !(transactionalCandidatesByCompany.get(companyId) || []).some(
+          (candidate) => candidate.deploymentType.trim().toLowerCase() === "cloud",
+        )
+      ) {
+        transactionalCandidatesByCompany.set(companyId, [{
+          companyId,
+          dealId: "",
+          dealName: "",
+          revenueSource: "stripe_arr",
+          workspaceId: normalizeWorkspaceId(row.workspaceIds[0]),
+          deploymentType: "Cloud",
+        }]);
+      }
       if (!stripeBaselinePlansByCompany.has(companyId)) stripeBaselinePlansByCompany.set(companyId, new Set());
       stripeBaselinePlansByCompany.get(companyId)!.add(row.plan);
     }

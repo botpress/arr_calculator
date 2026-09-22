@@ -50,6 +50,7 @@ export type AccountManagementWarehouseCompany = {
   csmOwnerId: string;
   churnType: string;
   ownerName: string;
+  workspaceIds: string[];
 };
 
 export type AccountManagementWarehouseData = {
@@ -275,6 +276,18 @@ WITH line_item_labels AS (
   JOIN ${lineItems} li USING (line_item_id)
   GROUP BY dli.deal_id
 ),
+companies AS (
+  SELECT
+    CAST(id AS STRING) AS company_id,
+    properties_name AS company_name,
+    properties_csm_owner AS csm_owner_id,
+    properties_churn_type AS churn_type,
+    LOWER(TRIM(COALESCE(properties_workspaceid, ''))) AS workspace_id,
+    LOWER(TRIM(COALESCE(properties_workspaceid_plus, ''))) AS workspace_id_plus
+  FROM ${rawCompanies}
+  WHERE COALESCE(archived, FALSE) = FALSE
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _airbyte_extracted_at DESC, updatedAt DESC) = 1
+),
 relevant_company_ids AS (
   SELECT DISTINCT d.primary_company_id AS company_id
   FROM ${deals} d
@@ -292,16 +305,12 @@ relevant_company_ids AS (
         AND NOT REGEXP_CONTAINS(labels.labels, r'(^|[^a-z0-9])plus([^a-z0-9]|$)')
       )
     )
-),
-companies AS (
-  SELECT
-    CAST(id AS STRING) AS company_id,
-    properties_name AS company_name,
-    properties_csm_owner AS csm_owner_id,
-    properties_churn_type AS churn_type
-  FROM ${rawCompanies}
-  WHERE COALESCE(archived, FALSE) = FALSE
-  QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _airbyte_extracted_at DESC, updatedAt DESC) = 1
+
+  UNION DISTINCT
+
+  SELECT company_id
+  FROM companies
+  WHERE workspace_id <> '' OR workspace_id_plus <> ''
 ),
 owners AS (
   SELECT
@@ -310,7 +319,14 @@ owners AS (
   FROM ${rawOwners}
   QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY _airbyte_extracted_at DESC, updatedAt DESC) = 1
 )
-SELECT c.company_id, c.company_name, c.csm_owner_id, c.churn_type, o.owner_name
+SELECT
+  c.company_id,
+  c.company_name,
+  c.csm_owner_id,
+  c.churn_type,
+  o.owner_name,
+  c.workspace_id,
+  c.workspace_id_plus
 FROM relevant_company_ids relevant
 JOIN companies c USING (company_id)
 LEFT JOIN owners o ON o.owner_id = c.csm_owner_id
@@ -361,6 +377,9 @@ ORDER BY workspace_id
       csmOwnerId: text(row.csm_owner_id),
       churnType: text(row.churn_type),
       ownerName: text(row.owner_name),
+      workspaceIds: [row.workspace_id, row.workspace_id_plus]
+        .map((workspaceId) => text(workspaceId).toLowerCase())
+        .filter(Boolean),
     })),
     hubspotDealWorkspaceIds: dealWorkspaceIdRows.map((row) => text(row.workspace_id).toLowerCase()).filter(Boolean),
   };
