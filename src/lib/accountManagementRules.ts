@@ -11,11 +11,12 @@ export type RetentionAccountInput = {
 
 export type RetentionAccountWithChurnType = RetentionAccountInput & {
   churnType?: string;
+  earlyLifecycleActivity?: boolean;
   previousCloudArr?: number;
   currentCloudArr?: number;
 };
 
-export type RetentionExclusionReason = "new_account_churn" | "legacy_only" | null;
+export type RetentionExclusionReason = "new_account_activity" | "legacy_only" | null;
 
 export type RetentionMovement = "expanded" | "contracted" | "churned" | "retained" | "not_in_baseline";
 
@@ -49,20 +50,25 @@ export function fillZeroArrFromStripe(
   };
 }
 
-export function isExcludedNewAccountChurn(account: RetentionAccountWithChurnType) {
+export function isExcludedNewAccountActivity(account: RetentionAccountWithChurnType) {
   return (
-    String(account.churnType || "").trim().toLowerCase() === "new account (<90 days)" &&
     Number(account.previousArr || 0) > 0 &&
-    Number(account.currentArr || 0) <= 0
+    Number(account.currentArr || 0) < Number(account.previousArr || 0) &&
+    (
+      account.earlyLifecycleActivity === true ||
+      String(account.churnType || "").trim().toLowerCase() === "new account (<90 days)"
+    )
   );
 }
+
+export const isExcludedNewAccountChurn = isExcludedNewAccountActivity;
 
 export function isExcludedLegacyAccount(account: RetentionAccountWithChurnType) {
   return Number(account.previousCloudArr || 0) <= 0 && Number(account.currentCloudArr || 0) <= 0;
 }
 
 export function retentionExclusionReason(account: RetentionAccountWithChurnType): RetentionExclusionReason {
-  if (isExcludedNewAccountChurn(account)) return "new_account_churn";
+  if (isExcludedNewAccountActivity(account)) return "new_account_activity";
   if (isExcludedLegacyAccount(account)) return "legacy_only";
   return null;
 }

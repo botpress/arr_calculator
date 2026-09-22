@@ -241,7 +241,7 @@ function OwnerSection({
                     <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
                     {account.excludedFromNrr ? (
                       <div className="account-management__muted">
-                        {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "New account churn · excluded from NRR"}
+                        {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "First-90-day activity · excluded from NRR"}
                       </div>
                     ) : null}
                   </td>
@@ -510,7 +510,7 @@ export default function AccountManagementPage() {
                         <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
                         {account.excludedFromNrr ? (
                           <div className="account-management__muted">
-                            {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "New account churn · excluded from NRR"}
+                            {account.exclusionReason === "legacy_only" ? "Legacy-only · excluded from NRR" : "First-90-day activity · excluded from NRR"}
                           </div>
                         ) : null}
                       </td>

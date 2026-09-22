@@ -7,6 +7,7 @@ import {
   companyCsmOwnerId,
   fillZeroArrFromStripe,
   isAccountManagementBaselineEligible,
+  isExcludedNewAccountActivity,
   isManagedAccountPlan,
   isTransactionalTeamPlan,
   isExcludedNewAccountChurn,
@@ -135,13 +136,21 @@ test("calculates NRR from only accounts with prior-quarter ARR", () => {
   });
 });
 
-test("excludes churned new accounts under 90 days from NRR while keeping them in account count", () => {
+test("excludes every ARR reduction in the first 90 days from NRR while keeping it in account count", () => {
   assert.equal(
-    isExcludedNewAccountChurn({ previousArr: 100, currentArr: 0, churnType: "New account (<90 days)" }),
+    isExcludedNewAccountActivity({ previousArr: 100, currentArr: 0, earlyLifecycleActivity: true }),
     true,
   );
   assert.equal(
-    isExcludedNewAccountChurn({ previousArr: 100, currentArr: 50, churnType: "New account (<90 days)" }),
+    isExcludedNewAccountActivity({ previousArr: 100, currentArr: 50, earlyLifecycleActivity: true }),
+    true,
+  );
+  assert.equal(
+    isExcludedNewAccountActivity({ previousArr: 100, currentArr: 50, churnType: "New account (<90 days)" }),
+    true,
+  );
+  assert.equal(
+    isExcludedNewAccountActivity({ previousArr: 100, currentArr: 120, earlyLifecycleActivity: true }),
     false,
   );
   assert.deepEqual(

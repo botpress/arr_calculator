@@ -13,6 +13,7 @@ import {
 import { queryAccountManagementWarehouseData } from "@/lib/accountManagementBigquery";
 import { FX_TARGET_CURRENCY, round2 } from "@/lib/logic";
 import {
+  queryStripeManagedEarlyLifecycleActivityFromBigQuery,
   queryStripeThroughMrrCustomerArrFromBigQuery,
   queryStripeThroughMrrCustomerPlanFromBigQuery,
 } from "@/lib/stripeBigquery";
@@ -29,6 +30,7 @@ export type AccountManagementAccountRow = {
   portfolioDealNames: string[];
   portfolioDealUrls: string[];
   churnType: string;
+  earlyLifecycleActivity: boolean;
   excludedFromNrr: boolean;
   exclusionReason: RetentionExclusionReason;
   previousDeployment: "cloud" | "legacy" | "mixed" | "none";
@@ -223,13 +225,14 @@ export async function generateAccountManagementReport(
 
   const stripeCarrByCompany = new Map<string, CompanyCarr>();
   const stripeBaselinePlansByCompany = new Map<string, Set<string>>();
+  const earlyLifecycleActivityCompanyIds = new Set<string>();
   for (const companyIds of companyIdsByWorkspaceId.values()) {
     for (const companyId of companyIds) {
       stripeCarrByCompany.set(companyId, emptyCompanyCarr());
     }
   }
   if (companyIdsByWorkspaceId.size) {
-    const [stripeArr, stripePlans] = await Promise.all([
+    const [stripeArr, stripePlans, earlyLifecycleActivity] = await Promise.all([
       queryStripeThroughMrrCustomerArrFromBigQuery(
         {
           startDate: window.previousQuarterEnd,
@@ -246,6 +249,16 @@ export async function generateAccountManagementReport(
           endDate: window.currentQuarterEnd,
           targetCurrency: FX_TARGET_CURRENCY,
           grain: "monthly",
+        },
+        { profile: "stripe_arr_correct" },
+      ),
+      queryStripeManagedEarlyLifecycleActivityFromBigQuery(
+        {
+          workspaceIds: Array.from(companyIdsByWorkspaceId.keys()),
+          activityStartDate: window.currentQuarterStart,
+          activityEndDate: window.currentQuarterEnd,
+          targetCurrency: FX_TARGET_CURRENCY,
+          maxAgeDays: 90,
         },
         { profile: "stripe_arr_correct" },
       ),
@@ -284,6 +297,11 @@ export async function generateAccountManagementReport(
       const companyId = matchingCompanyIds[0];
       if (!stripeBaselinePlansByCompany.has(companyId)) stripeBaselinePlansByCompany.set(companyId, new Set());
       stripeBaselinePlansByCompany.get(companyId)!.add(row.plan);
+    }
+    for (const row of earlyLifecycleActivity.rows) {
+      for (const companyId of companyIdsByWorkspaceId.get(normalizeWorkspaceId(row.workspaceId)) || []) {
+        earlyLifecycleActivityCompanyIds.add(companyId);
+      }
     }
     if (ambiguousStripeCustomerCount) {
       warnings.add(
@@ -397,13 +415,14 @@ export async function generateAccountManagementReport(
     .map(([companyId, carr]) => ({
       ...carr,
       churnType: String(companiesById.get(companyId)?.churnType || "").trim(),
+      earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
     }));
   const allCompanies = calculateRetentionMetricsWithExclusions(retentionInputs);
   const exclusionReasons = retentionInputs.map(retentionExclusionReason);
-  const excludedNewAccountChurnCount = exclusionReasons.filter((reason) => reason === "new_account_churn").length;
-  if (excludedNewAccountChurnCount) {
+  const excludedNewAccountActivityCount = exclusionReasons.filter((reason) => reason === "new_account_activity").length;
+  if (excludedNewAccountActivityCount) {
     warnings.add(
-      `${excludedNewAccountChurnCount} churned new account${excludedNewAccountChurnCount === 1 ? " was" : "s were"} excluded from NRR because company Churn Type is New account (<90 days).`,
+      `${excludedNewAccountActivityCount} account${excludedNewAccountActivityCount === 1 ? " was" : "s were"} excluded from NRR because a churn, downgrade, refund, or other ARR reduction occurred within the first 90 days.`,
     );
   }
   const excludedLegacyAccountCount = exclusionReasons.filter((reason) => reason === "legacy_only").length;
@@ -435,6 +454,7 @@ export async function generateAccountManagementReport(
       previousCloudArr: carr.previousCloudArr,
       currentCloudArr: carr.currentCloudArr,
       churnType,
+      earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
     });
     const excludedFromNrr = exclusionReason !== null;
     const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
@@ -446,6 +466,7 @@ export async function generateAccountManagementReport(
       portfolioDealNames: candidates.map((candidate) => candidate.dealName),
       portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
       churnType,
+      earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
       excludedFromNrr,
       exclusionReason,
       previousDeployment: deploymentLabel(carr.previousCloudArr, carr.previousLegacyArr),
@@ -510,6 +531,7 @@ export async function generateAccountManagementReport(
         previousCloudArr: carr.previousCloudArr,
         currentCloudArr: carr.currentCloudArr,
         churnType,
+        earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
       });
       const excludedFromNrr = exclusionReason !== null;
       const portfolioDealIds = candidates.map((candidate) => candidate.dealId);
@@ -525,6 +547,7 @@ export async function generateAccountManagementReport(
         portfolioDealNames: candidates.map((candidate) => candidate.dealName),
         portfolioDealUrls: portfolioDealIds.map((dealId) => dealUrl(portalId, dealId)),
         churnType,
+        earlyLifecycleActivity: earlyLifecycleActivityCompanyIds.has(companyId),
         excludedFromNrr,
         exclusionReason,
         previousDeployment: deploymentLabel(carr.previousCloudArr, carr.previousLegacyArr),
@@ -581,7 +604,7 @@ export async function generateAccountManagementReport(
       carrCalculation:
         "Existing Business companies use the BigQuery-replicated HubSpot deal and line-item data with the website's contracted-ARR rules. An Existing Business line cannot begin before that deal's close/effective date, preventing a copied renewal line from overlapping the contract it renews. Each zero quarter-end column is filled from BigQuery Stripe base-subscription ARR when available. All Transactional pipeline deals are classified as Cloud regardless of whether their HubSpot deployment field is blank. Stripe-measured accounts use BigQuery month-end base-subscription ARR joined through the deal's primary workspace ID. Stripe add-ons, AI tokens, conversation sessions, and web search/crawl revenue are excluded. Non-zero HubSpot ARR is never replaced, and each company is counted once.",
       nrrFormula:
-        "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no eligible prior-quarter-end ARR are omitted from the selected-quarter book. A churned company whose Churn Type is New account (<90 days) is excluded from the numerator, denominator, and churn total. Legacy-to-Cloud migrations are included using total prior ARR and total current ARR, so their migration expansion contributes to NRR.",
+        "NRR = current quarter-end ARR for the same prior-quarter-end account cohort ÷ prior quarter-end ARR. Accounts with no eligible prior-quarter-end ARR are omitted from the selected-quarter book. If Stripe plan history shows any managed-plan ARR reduction during the account's first 90 days—or HubSpot classifies the reduction as New account (<90 days)—the entire account is excluded from the numerator, denominator, contraction, and churn totals. This includes downgrades to Plus, churns, and refunds. Legacy-to-Cloud migrations are included using total prior ARR and total current ARR, so their migration expansion contributes to NRR.",
     },
   };
 }

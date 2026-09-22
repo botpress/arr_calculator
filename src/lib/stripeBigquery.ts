@@ -261,6 +261,17 @@ export type StripeThroughMrrCustomerPlanResult = {
   rows: StripeThroughMrrCustomerPlanRow[];
 };
 
+export type StripeManagedEarlyLifecycleActivityRow = {
+  workspaceId: string;
+  customerId: string;
+  managedStartDate: string;
+  activityDate: string;
+};
+
+export type StripeManagedEarlyLifecycleActivityResult = {
+  rows: StripeManagedEarlyLifecycleActivityRow[];
+};
+
 export type StripeLegacyToV4MigrationRequest = {
   startDate: string;
   endDate: string;
@@ -4540,6 +4551,146 @@ ORDER BY workspace_id ASC, customer_id ASC
     workspaceIds: normalizedWorkspaceIds,
     customerIds,
     mappings,
+  };
+}
+
+export async function queryStripeManagedEarlyLifecycleActivityFromBigQuery(
+  request: {
+    workspaceIds: string[];
+    activityStartDate: string;
+    activityEndDate: string;
+    targetCurrency: string;
+    maxAgeDays?: number;
+  },
+  options?: StripeBigQueryOptions,
+): Promise<StripeManagedEarlyLifecycleActivityResult> {
+  const activityStart = parseIsoDateUtc(request.activityStartDate);
+  const activityEnd = parseIsoDateUtc(request.activityEndDate);
+  if (!activityStart || !activityEnd || activityEnd.getTime() < activityStart.getTime()) {
+    throw new Error("Invalid activityStartDate/activityEndDate");
+  }
+  const workspaceIds = Array.from(
+    new Set((request.workspaceIds || []).map((value) => normalizeWorkspaceIdToken(value)).filter(Boolean)),
+  ).sort();
+  if (!workspaceIds.length) return { rows: [] };
+
+  const profile = normalizeProfile(options?.profile);
+  const sa = getServiceAccount(profile);
+  const projectId = readEnv("BIGQUERY_PROJECT_ID", profile) || sa.project_id;
+  if (!projectId) throw new Error("Missing BIGQUERY_PROJECT_ID (or project_id in service account JSON)");
+  const location = readEnv("BIGQUERY_LOCATION", profile) || "US";
+  const accessToken = await getAccessToken(sa);
+  const eventsTable = getStripeArrCorrectMrrChangeTable();
+  const productsTable = getStripeProductsTable(profile);
+  const customersMetadataTable = getStripeCustomersMetadataTable(profile);
+  const targetCurrency = String(request.targetCurrency || "usd").trim().toLowerCase() || "usd";
+  const maxAgeDays = Math.max(0, Math.min(365, Math.trunc(Number(request.maxAgeDays ?? 90))));
+
+  const query = `
+WITH workspace_customers AS (
+  SELECT
+    LOWER(TRIM(CAST(m.value AS STRING))) AS workspace_id,
+    CAST(m.customer_id AS STRING) AS customer_id
+  FROM \`${customersMetadataTable}\` m
+  WHERE LOWER(TRIM(CAST(m.\`key\` AS STRING))) = 'workspace_id'
+    AND LOWER(TRIM(CAST(m.value AS STRING))) IN UNNEST(@workspace_ids)
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY LOWER(TRIM(CAST(m.value AS STRING))), CAST(m.customer_id AS STRING)
+    ORDER BY CAST(m.batch_timestamp AS STRING) DESC
+  ) = 1
+),
+products_lookup AS (
+  SELECT
+    COALESCE(NULLIF(TRIM(CAST(id AS STRING)), ''), '(blank)') AS product_id,
+    COALESCE(NULLIF(TRIM(CAST(name AS STRING)), ''), '') AS product_name,
+    COALESCE(NULLIF(TRIM(CAST(description AS STRING)), ''), '') AS product_description
+  FROM \`${productsTable}\`
+),
+classified_events AS (
+  SELECT
+    wc.workspace_id,
+    wc.customer_id,
+    t.event_timestamp,
+    CAST(COALESCE(t.mrr_change, 0) AS FLOAT64) / 100.0 AS mrr_change_major,
+    CASE
+      WHEN LOWER(CAST(t.product_id AS STRING)) = 'prod_m9gpcuhm0q9uzg' THEN 0
+      WHEN LOWER(CAST(t.product_id AS STRING)) = 'prod_pbflquwvpscoaw' THEN 1
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'enterprise') THEN 5
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'managed') THEN 4
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'(^|[^a-z])team([^a-z]|$)') THEN 3
+      WHEN REGEXP_CONTAINS(LOWER(CONCAT(' ', CAST(t.price_id AS STRING), ' ', CAST(t.product_id AS STRING), ' ', COALESCE(p.product_name, ''), ' ', COALESCE(p.product_description, ''), ' ')), r'(^|[^a-z])plus([^a-z]|$)') THEN 2
+      ELSE 0
+    END AS plan_rank
+  FROM \`${eventsTable}\` t
+  JOIN workspace_customers wc ON wc.customer_id = CAST(t.customer_id AS STRING)
+  LEFT JOIN products_lookup p
+    ON p.product_id = COALESCE(NULLIF(TRIM(CAST(t.product_id AS STRING)), ''), '(blank)')
+  WHERE LOWER(COALESCE(CAST(t.currency AS STRING), '')) = @target_currency
+    AND DATE(t.event_timestamp) <= DATE(@activity_end_date)
+),
+managed_deltas AS (
+  SELECT workspace_id, customer_id, event_timestamp, SUM(mrr_change_major) AS mrr_change_major
+  FROM classified_events
+  WHERE plan_rank >= 3
+  GROUP BY workspace_id, customer_id, event_timestamp
+),
+managed_balances AS (
+  SELECT
+    *,
+    COALESCE(SUM(mrr_change_major) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ), 0.0) AS balance_before,
+    COALESCE(SUM(mrr_change_major) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ), 0.0) AS balance_after
+  FROM managed_deltas
+),
+managed_segments AS (
+  SELECT
+    *,
+    MAX(IF(balance_before <= 1e-9 AND balance_after > 1e-9, event_timestamp, NULL)) OVER (
+      PARTITION BY workspace_id, customer_id
+      ORDER BY event_timestamp
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS managed_start_timestamp
+  FROM managed_balances
+),
+qualifying_activity AS (
+  SELECT
+    workspace_id,
+    customer_id,
+    DATE(managed_start_timestamp) AS managed_start_date,
+    MIN(DATE(event_timestamp)) AS activity_date
+  FROM managed_segments
+  WHERE mrr_change_major < -1e-9
+    AND balance_before > 1e-9
+    AND DATE(event_timestamp) BETWEEN DATE(@activity_start_date) AND DATE(@activity_end_date)
+    AND DATE_DIFF(DATE(event_timestamp), DATE(managed_start_timestamp), DAY) BETWEEN 0 AND @max_age_days
+  GROUP BY workspace_id, customer_id, managed_start_date
+)
+SELECT workspace_id, customer_id, managed_start_date, activity_date
+FROM qualifying_activity
+ORDER BY workspace_id, customer_id
+`;
+  const params: BigQueryNamedParameter[] = [
+    { name: "workspace_ids", type: "ARRAY_STRING", value: workspaceIds },
+    { name: "activity_start_date", type: "STRING", value: request.activityStartDate },
+    { name: "activity_end_date", type: "STRING", value: request.activityEndDate },
+    { name: "target_currency", type: "STRING", value: targetCurrency },
+    { name: "max_age_days", type: "INT64", value: String(maxAgeDays) },
+  ];
+  const rows = await runBigQueryQueryRows(accessToken, projectId, location, query, params);
+  return {
+    rows: rows.map((row) => ({
+      workspaceId: asString(row.workspace_id),
+      customerId: asString(row.customer_id),
+      managedStartDate: asString(row.managed_start_date),
+      activityDate: asString(row.activity_date),
+    })),
   };
 }
 
