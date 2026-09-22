@@ -6,6 +6,7 @@ import type {
   AccountManagementOwnerRow,
   AccountManagementReportResponse,
 } from "@/lib/accountManagementReport";
+import { annualizeQuarterlyNrrPct } from "@/lib/accountManagementRules";
 
 function currentQuarter() {
   const now = new Date();
@@ -58,6 +59,10 @@ function formatPct(value: number | null) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value)}%`;
+}
+
+function formatAnnualizedNrr(value: number | null) {
+  return formatPct(annualizeQuarterlyNrrPct(value));
 }
 
 function movementLabel(movement: AccountManagementAccountRow["movement"]) {
@@ -144,8 +149,8 @@ function OwnerSection({
           </p>
         </div>
         <div className="account-management__nrr">
-          <span>NRR</span>
-          <strong>{formatPct(owner.nrrPct)}</strong>
+          <span>Annualized NRR</span>
+          <strong>{formatAnnualizedNrr(owner.nrrPct)}</strong>
         </div>
       </div>
 
@@ -186,7 +191,7 @@ function OwnerSection({
               <th>{data.previousQuarterLabel} ARR</th>
               <th>{data.currentQuarterLabel} ARR</th>
               <th>Change</th>
-              <th>Account NRR</th>
+              <th>Annualized account NRR</th>
               <th>Movement</th>
             </tr>
           </thead>
@@ -236,7 +241,7 @@ function OwnerSection({
                   <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
                     {signedMoney(account.netChange, data.targetCurrency)}
                   </td>
-                  <td>{account.excludedFromNrr ? "Excluded" : formatPct(account.nrrPct)}</td>
+                  <td>{account.excludedFromNrr ? "Excluded" : formatAnnualizedNrr(account.nrrPct)}</td>
                   <td>
                     <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
                     {account.excludedFromNrr ? (
@@ -314,7 +319,7 @@ export default function AccountManagementPage() {
           <div>
             <h1 className="stripe-ui__title">Account Management</h1>
             <p className="stripe-ui__subtitle">
-              Quarterly NRR for Chloé, Sam, and Kieran, assigning accounts from the current CSM owner field on each HubSpot company.
+              Annualized NRR based on quarterly retention for Chloé, Sam, and Kieran, assigning accounts from the current CSM owner field on each HubSpot company.
             </p>
           </div>
         </div>
@@ -397,8 +402,8 @@ export default function AccountManagementPage() {
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--all">
-                <span>Company-wide NRR</span>
-                <strong>{formatPct(data.allCompanies.nrrPct)}</strong>
+                <span>Annualized company-wide NRR</span>
+                <strong>{formatAnnualizedNrr(data.allCompanies.nrrPct)}</strong>
               </div>
             </div>
             <RetentionSummaryStats metrics={data.allCompanies} currency={data.targetCurrency} />
@@ -414,8 +419,8 @@ export default function AccountManagementPage() {
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--team">
-                <span>Team NRR</span>
-                <strong>{formatPct(data.team.nrrPct)}</strong>
+                <span>Annualized team NRR</span>
+                <strong>{formatAnnualizedNrr(data.team.nrrPct)}</strong>
               </div>
             </div>
             <RetentionSummaryStats metrics={data.team} currency={data.targetCurrency} />
@@ -436,8 +441,8 @@ export default function AccountManagementPage() {
                 </p>
               </div>
               <div className="account-management__nrr account-management__nrr--outside">
-                <span>Outside-team NRR</span>
-                <strong>{formatPct(data.outsideTeam.nrrPct)}</strong>
+                <span>Annualized outside-team NRR</span>
+                <strong>{formatAnnualizedNrr(data.outsideTeam.nrrPct)}</strong>
               </div>
             </div>
             <RetentionSummaryStats metrics={data.outsideTeam} currency={data.targetCurrency} />
@@ -452,7 +457,7 @@ export default function AccountManagementPage() {
                     <th>{data.previousQuarterLabel} ARR</th>
                     <th>{data.currentQuarterLabel} ARR</th>
                     <th>Change</th>
-                    <th>Account NRR</th>
+                    <th>Annualized account NRR</th>
                     <th>Movement</th>
                   </tr>
                 </thead>
@@ -505,7 +510,7 @@ export default function AccountManagementPage() {
                       <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
                         {signedMoney(account.netChange, data.targetCurrency)}
                       </td>
-                      <td>{account.excludedFromNrr ? "Excluded" : formatPct(account.nrrPct)}</td>
+                      <td>{account.excludedFromNrr ? "Excluded" : formatAnnualizedNrr(account.nrrPct)}</td>
                       <td>
                         <span className={movementClass(account.movement)}>{movementLabel(account.movement)}</span>
                         {account.excludedFromNrr ? (
@@ -533,7 +538,7 @@ export default function AccountManagementPage() {
               <p><strong>Outside-team cohort:</strong> {data.methodology.outsideTeamCohort}</p>
               <p><strong>Ownership:</strong> {data.methodology.ownerCohort}</p>
               <p><strong>ARR:</strong> {data.methodology.carrCalculation}</p>
-              <p><strong>NRR:</strong> {data.methodology.nrrFormula}</p>
+              <p><strong>NRR:</strong> {data.methodology.nrrFormula} Displayed NRR is annualized as (quarterly NRR ÷ 100)<sup>4</sup> × 100.</p>
             </div>
           </section>
         </>

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  annualizeQuarterlyNrrPct,
   accountManagementQuarterWindow,
   calculateRetentionMetrics,
   calculateRetentionMetricsWithExclusions,
@@ -15,6 +16,13 @@ import {
   retentionExclusionReason,
   retentionMovement,
 } from "../src/lib/accountManagementRules.ts";
+
+test("annualizes quarterly NRR by compounding four quarters", () => {
+  assert.equal(annualizeQuarterlyNrrPct(90), 65.61);
+  assert.equal(annualizeQuarterlyNrrPct(100), 100);
+  assert.equal(annualizeQuarterlyNrrPct(110), 146.41);
+  assert.equal(annualizeQuarterlyNrrPct(null), null);
+});
 
 test("admits only baseline managed plans when Stripe measures the account", () => {
   assert.equal(isManagedAccountPlan("Team"), true);

@@ -130,6 +130,11 @@ function round2(value: number) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+export function annualizeQuarterlyNrrPct(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  return round2(Math.pow(Math.max(0, Number(value)) / 100, 4) * 100);
+}
+
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
