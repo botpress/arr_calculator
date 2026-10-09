@@ -1,16 +1,23 @@
 import { BlobNotFoundError, head, put } from "@vercel/blob";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { normalizeAppRoles, type AppRole } from "@/lib/accessRoles";
 import { blobAccessMode, blobFetchHeaders, blobReadWriteToken, hasBlobToken } from "@/lib/blobConfig";
 
 export type AccessControlStoreStorageKind = "vercel_blob" | "local_tmp";
 
 export type AccessControlPolicy = {
-  version: 1;
+  version: 2;
   allowedEmails: string[];
   adminEmails: string[];
+  viewerEmails: string[];
+  salesEmails: string[];
+  accountManagementEmails: string[];
+  gtmEmails: string[];
   updatedAt: number;
 };
+
+type StoredAccessControlPolicy = Omit<Partial<AccessControlPolicy>, "version"> & { version?: 1 | 2 };
 
 const STORE_BLOB_PATH =
   process.env.AUTH_ACCESS_CONTROL_BLOB_PATH || "arr/auth/access-control-v1.json";
@@ -50,10 +57,26 @@ function bootstrapAllowedEmails() {
   return allowed;
 }
 
+function bootstrapSalesEmails() {
+  return parseCsvEmailSet(process.env.AUTH_SALES_EMAILS);
+}
+
+function bootstrapAccountManagementEmails() {
+  return parseCsvEmailSet(process.env.AUTH_ACCOUNT_MANAGEMENT_EMAILS);
+}
+
+function bootstrapGtmEmails() {
+  return parseCsvEmailSet(process.env.AUTH_GTM_EMAILS);
+}
+
 function normalizePolicy(value: unknown): AccessControlPolicy {
-  const parsed = value && typeof value === "object" ? (value as Partial<AccessControlPolicy>) : {};
+  const parsed = value && typeof value === "object" ? (value as StoredAccessControlPolicy) : {};
   const allowedSet = new Set<string>();
   const adminSet = new Set<string>();
+  const viewerSet = new Set<string>();
+  const salesSet = new Set<string>();
+  const accountManagementSet = new Set<string>();
+  const gtmSet = new Set<string>();
 
   for (const email of parsed.allowedEmails || []) {
     const normalized = normalizeEmail(email);
@@ -63,6 +86,31 @@ function normalizePolicy(value: unknown): AccessControlPolicy {
     const normalized = normalizeEmail(email);
     if (isValidEmail(normalized)) adminSet.add(normalized);
   }
+  for (const email of parsed.viewerEmails || []) {
+    const normalized = normalizeEmail(email);
+    if (isValidEmail(normalized)) viewerSet.add(normalized);
+  }
+  for (const email of parsed.salesEmails || []) {
+    const normalized = normalizeEmail(email);
+    if (isValidEmail(normalized)) salesSet.add(normalized);
+  }
+  for (const email of parsed.accountManagementEmails || []) {
+    const normalized = normalizeEmail(email);
+    if (isValidEmail(normalized)) accountManagementSet.add(normalized);
+  }
+  for (const email of parsed.gtmEmails || []) {
+    const normalized = normalizeEmail(email);
+    if (isValidEmail(normalized)) gtmSet.add(normalized);
+  }
+
+  // Version 1 inferred Viewer from an allowed email that had no specialized role.
+  if (parsed.version !== 2 && !Array.isArray(parsed.viewerEmails)) {
+    for (const email of allowedSet) {
+      if (!adminSet.has(email) && !salesSet.has(email) && !accountManagementSet.has(email)) {
+        viewerSet.add(email);
+      }
+    }
+  }
 
   for (const email of bootstrapAdminEmails()) {
     adminSet.add(email);
@@ -71,13 +119,62 @@ function normalizePolicy(value: unknown): AccessControlPolicy {
   for (const email of bootstrapAllowedEmails()) {
     allowedSet.add(email);
   }
+  for (const email of bootstrapSalesEmails()) {
+    salesSet.add(email);
+    allowedSet.add(email);
+  }
+  for (const email of bootstrapAccountManagementEmails()) {
+    accountManagementSet.add(email);
+    allowedSet.add(email);
+  }
+  for (const email of bootstrapGtmEmails()) {
+    gtmSet.add(email);
+    allowedSet.add(email);
+  }
 
-  for (const email of adminSet) allowedSet.add(email);
+  for (const email of bootstrapAllowedEmails()) {
+    if (
+      !adminSet.has(email) &&
+      !salesSet.has(email) &&
+      !accountManagementSet.has(email) &&
+      !gtmSet.has(email)
+    ) {
+      viewerSet.add(email);
+    }
+  }
+
+  for (const email of adminSet) {
+    viewerSet.delete(email);
+    salesSet.delete(email);
+    accountManagementSet.delete(email);
+    gtmSet.delete(email);
+    allowedSet.add(email);
+  }
+  for (const email of viewerSet) allowedSet.add(email);
+  for (const email of salesSet) allowedSet.add(email);
+  for (const email of accountManagementSet) allowedSet.add(email);
+  for (const email of gtmSet) allowedSet.add(email);
+
+  for (const email of allowedSet) {
+    if (
+      !adminSet.has(email) &&
+      !viewerSet.has(email) &&
+      !salesSet.has(email) &&
+      !accountManagementSet.has(email) &&
+      !gtmSet.has(email)
+    ) {
+      viewerSet.add(email);
+    }
+  }
 
   return {
-    version: 1,
+    version: 2,
     allowedEmails: Array.from(allowedSet).sort((a, b) => a.localeCompare(b)),
     adminEmails: Array.from(adminSet).sort((a, b) => a.localeCompare(b)),
+    viewerEmails: Array.from(viewerSet).sort((a, b) => a.localeCompare(b)),
+    salesEmails: Array.from(salesSet).sort((a, b) => a.localeCompare(b)),
+    accountManagementEmails: Array.from(accountManagementSet).sort((a, b) => a.localeCompare(b)),
+    gtmEmails: Array.from(gtmSet).sort((a, b) => a.localeCompare(b)),
     updatedAt: Number(parsed.updatedAt || Date.now()),
   };
 }
@@ -188,48 +285,78 @@ export async function saveAccessControlPolicy(policy: AccessControlPolicy): Prom
   return { storage: "local_tmp", policy: normalized };
 }
 
-export async function upsertAccessEmail(email: string, isAdmin: boolean) {
+export function accessRolesForEmail(policy: AccessControlPolicy, email: string): AppRole[] {
   const normalized = normalizeEmail(email);
-  if (!isValidEmail(normalized)) {
-    throw new Error("Invalid email address");
-  }
-  const loaded = await loadAccessControlPolicy({ bypassCache: true });
-  const allowed = new Set(loaded.policy.allowedEmails);
-  const admins = new Set(loaded.policy.adminEmails);
-  allowed.add(normalized);
-  if (isAdmin) admins.add(normalized);
-  return saveAccessControlPolicy({
-    version: 1,
-    allowedEmails: Array.from(allowed),
-    adminEmails: Array.from(admins),
-    updatedAt: Date.now(),
-  });
+  if (policy.adminEmails.includes(normalized)) return ["admin"];
+  const roles: AppRole[] = [];
+  if (policy.viewerEmails.includes(normalized)) roles.push("viewer");
+  if (policy.salesEmails.includes(normalized)) roles.push("sales");
+  if (policy.accountManagementEmails.includes(normalized)) roles.push("account_management");
+  if (policy.gtmEmails.includes(normalized)) roles.push("gtm");
+  return normalizeAppRoles(roles);
 }
 
-export async function setEmailAdmin(email: string, isAdmin: boolean) {
+function policyWithEmailRoles(policy: AccessControlPolicy, email: string, roles: unknown) {
+  const allowed = new Set(policy.allowedEmails);
+  const admins = new Set(policy.adminEmails);
+  const viewers = new Set(policy.viewerEmails);
+  const sales = new Set(policy.salesEmails);
+  const accountManagement = new Set(policy.accountManagementEmails);
+  const gtm = new Set(policy.gtmEmails);
+  const normalizedRoles = normalizeAppRoles(roles);
+
+  allowed.add(email);
+  admins.delete(email);
+  viewers.delete(email);
+  sales.delete(email);
+  accountManagement.delete(email);
+  gtm.delete(email);
+
+  if (normalizedRoles.includes("admin")) {
+    admins.add(email);
+  } else {
+    if (normalizedRoles.includes("viewer")) viewers.add(email);
+    if (normalizedRoles.includes("sales")) sales.add(email);
+    if (normalizedRoles.includes("account_management")) accountManagement.add(email);
+    if (normalizedRoles.includes("gtm")) gtm.add(email);
+  }
+
+  return {
+    version: 2 as const,
+    allowedEmails: Array.from(allowed),
+    adminEmails: Array.from(admins),
+    viewerEmails: Array.from(viewers),
+    salesEmails: Array.from(sales),
+    accountManagementEmails: Array.from(accountManagement),
+    gtmEmails: Array.from(gtm),
+    updatedAt: Date.now(),
+  };
+}
+
+export async function upsertAccessEmail(email: string, roles: AppRole | AppRole[]) {
   const normalized = normalizeEmail(email);
   if (!isValidEmail(normalized)) {
     throw new Error("Invalid email address");
   }
   const loaded = await loadAccessControlPolicy({ bypassCache: true });
-  const allowed = new Set(loaded.policy.allowedEmails);
-  const admins = new Set(loaded.policy.adminEmails);
-  if (isAdmin) {
-    allowed.add(normalized);
-    admins.add(normalized);
-  } else {
-    admins.delete(normalized);
-    for (const required of bootstrapAdminEmails()) admins.add(required);
-    if (!admins.size) {
-      throw new Error("Cannot remove the last admin");
-    }
+  return saveAccessControlPolicy(policyWithEmailRoles(loaded.policy, normalized, roles));
+}
+
+export async function setEmailRoles(email: string, roles: AppRole[]) {
+  const normalized = normalizeEmail(email);
+  if (!isValidEmail(normalized)) {
+    throw new Error("Invalid email address");
   }
-  return saveAccessControlPolicy({
-    version: 1,
-    allowedEmails: Array.from(allowed),
-    adminEmails: Array.from(admins),
-    updatedAt: Date.now(),
-  });
+  const normalizedRoles = normalizeAppRoles(roles);
+  if (bootstrapAdminEmails().has(normalized) && !normalizedRoles.includes("admin")) {
+    throw new Error("Cannot change a required admin role");
+  }
+  const loaded = await loadAccessControlPolicy({ bypassCache: true });
+  return saveAccessControlPolicy(policyWithEmailRoles(loaded.policy, normalized, normalizedRoles));
+}
+
+export async function setEmailRole(email: string, role: AppRole) {
+  return setEmailRoles(email, [role]);
 }
 
 export async function removeAccessEmail(email: string) {
@@ -244,16 +371,28 @@ export async function removeAccessEmail(email: string) {
   const loaded = await loadAccessControlPolicy({ bypassCache: true });
   const allowed = new Set(loaded.policy.allowedEmails);
   const admins = new Set(loaded.policy.adminEmails);
+  const viewers = new Set(loaded.policy.viewerEmails);
+  const sales = new Set(loaded.policy.salesEmails);
+  const accountManagement = new Set(loaded.policy.accountManagementEmails);
+  const gtm = new Set(loaded.policy.gtmEmails);
   allowed.delete(normalized);
   admins.delete(normalized);
+  viewers.delete(normalized);
+  sales.delete(normalized);
+  accountManagement.delete(normalized);
+  gtm.delete(normalized);
   for (const required of requiredAdmins) {
     allowed.add(required);
     admins.add(required);
   }
   return saveAccessControlPolicy({
-    version: 1,
+    version: 2,
     allowedEmails: Array.from(allowed),
     adminEmails: Array.from(admins),
+    viewerEmails: Array.from(viewers),
+    salesEmails: Array.from(sales),
+    accountManagementEmails: Array.from(accountManagement),
+    gtmEmails: Array.from(gtm),
     updatedAt: Date.now(),
   });
 }

@@ -31,6 +31,9 @@ export type HubspotLineItemProps = {
   hs_billing_period_start_date?: unknown;
   hs_billing_period_end_date?: unknown;
   hs_term_in_months?: unknown;
+  hs_recurring_billing_period?: unknown;
+  hs_recurring_billing_number_of_payments?: unknown;
+  hs_recurring_billing_terms?: unknown;
 
   amount?: unknown;
   net_price?: unknown;

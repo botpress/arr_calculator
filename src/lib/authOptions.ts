@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { loadAccessControlPolicy } from "@/lib/accessControlStore";
+import { accessRolesForEmail, loadAccessControlPolicy } from "@/lib/accessControlStore";
+import { normalizeAppRoles, primaryAppRole } from "@/lib/accessRoles";
 
 const googleClientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
 const googleClientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
@@ -48,14 +49,17 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token }) {
       const email = String(token.email || "").trim().toLowerCase();
       const { policy } = await loadAccessControlPolicy();
-      token.role = policy.adminEmails.includes(email) ? "admin" : "viewer";
+      const roles = accessRolesForEmail(policy, email);
+      token.roles = roles;
+      token.role = primaryAppRole(roles);
       return token;
     },
     async session({ session, token }) {
-      const role = String(token.role || "viewer") === "admin" ? "admin" : "viewer";
-      (session.user as { role?: string } | undefined) = {
+      const roles = normalizeAppRoles(token.roles || token.role);
+      (session.user as { role?: string; roles?: string[] } | undefined) = {
         ...(session.user || {}),
-        role,
+        role: primaryAppRole(roles),
+        roles,
       };
       return session;
     },
