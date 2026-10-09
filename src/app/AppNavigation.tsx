@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 
 type NavigationItem = {
@@ -38,6 +38,28 @@ export default function AppNavigation() {
   const pathname = usePathname();
   const [roles, setRoles] = useState<string[]>([]);
   const [sessionLoaded, setSessionLoaded] = useState(false);
+  const groupsRef = useRef<HTMLDivElement>(null);
+
+  // Close open menus when clicking anywhere outside them, or on Escape.
+  useEffect(() => {
+    function closeMenusExcept(target: Node | null) {
+      groupsRef.current?.querySelectorAll("details[open]").forEach((menu) => {
+        if (!target || !menu.contains(target)) (menu as HTMLDetailsElement).open = false;
+      });
+    }
+    function onPointerDown(event: PointerEvent) {
+      closeMenusExcept(event.target as Node);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeMenusExcept(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -143,7 +165,7 @@ export default function AppNavigation() {
           <span className="app-nav__brand-mark" aria-hidden="true">B</span>
           <span>ARR Calculator</span>
         </Link>
-        <div className="app-nav__groups">
+        <div className="app-nav__groups" ref={groupsRef}>
           {groups.map((group) => {
             const groupActive = group.items.some((item) => isActive(pathname, item.href));
             return (
