@@ -24,7 +24,7 @@ const STORE_BLOB_PATH =
 const STORE_PATH =
   process.env.AUTH_ACCESS_CONTROL_STORE_PATH || "/tmp/arr-auth-access-control-v1.json";
 
-const REQUIRED_ADMIN_EMAILS = ["hany.safwat@botpress.com", "siya.gupta@botpress.com"];
+const REQUIRED_ADMIN_EMAILS = ["anthony.courey@botpress.com", "frank.jessop@botpress.com"];
 const cacheTtlMs = Math.max(5_000, Number(process.env.AUTH_ACCESS_CONTROL_CACHE_TTL_MS || "30000"));
 let policyCache: { value: AccessControlPolicy; expiresAt: number } | null = null;
 
