@@ -1815,7 +1815,6 @@ async function fetchBigQueryResultsPage(
   location: string,
   query: string,
   params: BigQueryNamedParameter[],
-  pageToken?: string,
 ): Promise<BigQueryQueryResponse> {
   const queryParameters = params.map((parameter) => {
     if (parameter.type === "ARRAY_STRING") {
@@ -1841,8 +1840,6 @@ async function fetchBigQueryResultsPage(
     maxResults: BQ_MAX_RESULTS,
     timeoutMs: 20000,
   };
-
-  if (pageToken) body.pageToken = pageToken;
 
   const res = await fetch(`https://bigquery.googleapis.com/bigquery/v2/projects/${projectId}/queries`, {
     method: "POST",
@@ -1880,6 +1877,53 @@ async function waitForJobCompletion(
   throw new Error("BigQuery query timed out waiting for completion");
 }
 
+async function fetchBigQueryJobResultsPage(
+  accessToken: string,
+  projectId: string,
+  jobId: string,
+  location: string,
+  pageToken: string,
+): Promise<BigQueryQueryResponse> {
+  const url = `https://bigquery.googleapis.com/bigquery/v2/projects/${projectId}/queries/${jobId}?location=${encodeURIComponent(location)}&maxResults=${encodeURIComponent(String(BQ_MAX_RESULTS))}&pageToken=${encodeURIComponent(pageToken)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`BigQuery getQueryResults error ${res.status}: ${text}`);
+  return JSON.parse(text) as BigQueryQueryResponse;
+}
+
+// Runs the query once, then reads every result page from the finished job.
+// jobs.query ignores pageToken (it re-runs the query and returns page 1 again),
+// so later pages must come from getQueryResults on the job.
+async function* iterateBigQueryPages(
+  accessToken: string,
+  projectId: string,
+  location: string,
+  query: string,
+  params: BigQueryNamedParameter[],
+): AsyncGenerator<{ fields: string[]; rows: NonNullable<BigQueryQueryResponse["rows"]> }> {
+  let json = await fetchBigQueryResultsPage(accessToken, projectId, location, query, params);
+  const jobId = json.jobReference?.jobId;
+  const jobProjectId = json.jobReference?.projectId || projectId;
+  const jobLocation = json.jobReference?.location || location;
+  if (!json.jobComplete && jobId) {
+    json = await waitForJobCompletion(accessToken, jobProjectId, jobId, jobLocation);
+  }
+
+  let fields: string[] = [];
+  while (true) {
+    const pageFields = (json.schema?.fields || []).map((f) => f.name);
+    if (pageFields.length) fields = pageFields;
+    yield { fields, rows: json.rows || [] };
+
+    if (!json.pageToken) break;
+    if (!jobId) throw new Error("BigQuery returned more pages but no job reference to read them from");
+    json = await fetchBigQueryJobResultsPage(accessToken, jobProjectId, jobId, jobLocation, json.pageToken);
+  }
+}
+
 async function runBigQueryQueryRows(
   accessToken: string,
   projectId: string,
@@ -1888,34 +1932,11 @@ async function runBigQueryQueryRows(
   params: BigQueryNamedParameter[],
 ) {
   const rowsOut: Record<string, unknown>[] = [];
-  let pageToken: string | undefined;
-  let fields: string[] = [];
-
-  while (true) {
-    let json = await fetchBigQueryResultsPage(
-      accessToken,
-      projectId,
-      location,
-      query,
-      params,
-      pageToken,
-    );
-    if (!json.jobComplete && json.jobReference?.jobId) {
-      const jobProjectId = json.jobReference.projectId || projectId;
-      const jobLocation = json.jobReference.location || location;
-      json = await waitForJobCompletion(accessToken, jobProjectId, json.jobReference.jobId, jobLocation);
+  for await (const page of iterateBigQueryPages(accessToken, projectId, location, query, params)) {
+    for (const row of page.rows) {
+      rowsOut.push(rowToObject(page.fields, row));
     }
-
-    const pageFields = (json.schema?.fields || []).map((f) => f.name);
-    if (pageFields.length) fields = pageFields;
-    for (const row of json.rows || []) {
-      rowsOut.push(rowToObject(fields, row));
-    }
-
-    if (!json.pageToken) break;
-    pageToken = json.pageToken;
   }
-
   return rowsOut;
 }
 
@@ -10483,26 +10504,10 @@ export async function loadStripeLineItemsFromBigQuery(
 
   const out: SyncedStripeLineItem[] = [];
   const seen = new Set<string>();
-  let pageToken: string | undefined;
 
-  while (true) {
-    let json = await fetchBigQueryResultsPage(
-      accessToken,
-      projectId,
-      location,
-      query,
-      queryParams,
-      pageToken,
-    );
-    if (!json.jobComplete && json.jobReference?.jobId) {
-      const jobProjectId = json.jobReference.projectId || projectId;
-      const jobLocation = json.jobReference.location || location;
-      json = await waitForJobCompletion(accessToken, jobProjectId, json.jobReference.jobId, jobLocation);
-    }
-
-    const fields = (json.schema?.fields || []).map((f) => f.name);
-    for (const row of json.rows || []) {
-      const obj = rowToObject(fields, row);
+  for await (const page of iterateBigQueryPages(accessToken, projectId, location, query, queryParams)) {
+    for (const row of page.rows) {
+      const obj = rowToObject(page.fields, row);
       const item = mapBigQueryRowToSyncedItem(obj, sourceConfig.tsMultiplier);
       const dedupeKey = [
         item.invoiceId,
@@ -10515,9 +10520,6 @@ export async function loadStripeLineItemsFromBigQuery(
       seen.add(dedupeKey);
       out.push(item);
     }
-
-    if (!json.pageToken) break;
-    pageToken = json.pageToken;
   }
 
   return out;
