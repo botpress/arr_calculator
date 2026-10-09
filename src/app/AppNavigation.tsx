@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import BotpressLogo from "./BotpressLogo";
 
 type NavigationItem = {
   href: string;
@@ -162,7 +163,7 @@ export default function AppNavigation() {
     <nav className="app-nav" aria-label="Main navigation">
       <div className="app-nav__inner">
         <Link className="app-nav__brand" href={homeHref}>
-          <span className="app-nav__brand-mark" aria-hidden="true">B</span>
+          <BotpressLogo className="app-nav__brand-mark" />
           <span>ARR Calculator</span>
         </Link>
         <div className="app-nav__groups" ref={groupsRef}>
