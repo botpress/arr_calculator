@@ -69,12 +69,8 @@ body {
 .app-nav__brand-mark {
   width: 1.75rem;
   height: 1.75rem;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid #4e77b8;
-  background: #10203b;
-  color: #dce9ff;
-  font-size: 0.78rem;
+  flex: none;
+  color: #f4f7ff;
 }
 
 .app-nav__groups {
