@@ -1264,6 +1264,8 @@ export async function generateCombinedAllSubsReport(
         loadSalesAssistWorkspaceEventsByWorkspaceId(),
         loadSalesAssistCompanyOffEventsByCompanyId(),
       ]);
+      // The event list covers all time, so an empty result means the HubSpot lookup failed quietly.
+      if (eventsByWorkspaceId.size === 0) throw new Error("HubSpot returned no sales-assist deals");
       salesAssistByWorkspaceMonth = buildSalesAssistMonthMap(eventsByWorkspaceId, periods.map((period) => period.key));
       salesAssistCompanyOffByCompanyId = companyOffEventsByCompanyId;
     } catch (error: unknown) {
