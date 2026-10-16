@@ -35,6 +35,12 @@ const PRECOMPUTED_TABLE_DATASET = String(process.env.PRECOMPUTED_TABLES_DATASET 
 const PRECOMPUTED_PAYLOAD_TABLE = String(process.env.PRECOMPUTED_PAYLOAD_TABLE || "api_payload_cache")
   .trim() || "api_payload_cache";
 const PRECOMPUTED_PROFILE: StripeBigQueryProfile = "stripe_arr_correct";
+// Saved results older than this are ignored, so a fix to past data reaches every page within a day.
+// The nightly job (08:00 UTC) rebuilds the default ranges, so those stay fresh; other ranges are
+// rebuilt on their next view.
+const MAX_AGE_HOURS = String(
+  Math.max(1, Math.floor(Number(process.env.PRECOMPUTED_PAYLOAD_MAX_AGE_HOURS || 26)) || 26),
+);
 
 let ensured = false;
 
@@ -92,12 +98,14 @@ SELECT payload_json
 FROM ${tableRef}
 WHERE endpoint_key = @endpoint_key
   AND cache_key = @cache_key
+  AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @max_age_hours HOUR)
 ORDER BY generated_at DESC
 LIMIT 1
 `,
     [
       { name: "endpoint_key", type: "STRING", value: String(endpointKey || "").trim() },
       { name: "cache_key", type: "STRING", value: String(cacheKey || "").trim() },
+      { name: "max_age_hours", type: "INT64", value: MAX_AGE_HOURS },
     ],
     { profile: options?.profile || PRECOMPUTED_PROFILE },
   );
@@ -176,6 +184,7 @@ WHERE endpoint_key = @endpoint_key
   AND (@start_date = "" OR end_date >= DATE(@start_date))
   AND (@end_date = "" OR start_date <= DATE(@end_date))
   AND (@cache_key_prefix = "" OR STARTS_WITH(cache_key, @cache_key_prefix))
+  AND generated_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @max_age_hours HOUR)
 QUALIFY ROW_NUMBER() OVER (PARTITION BY cache_key ORDER BY generated_at DESC) = 1
 ORDER BY start_date ASC, end_date ASC
 LIMIT @limit
@@ -187,6 +196,7 @@ LIMIT @limit
       { name: "end_date", type: "STRING", value: String(args.endDate || "").trim() },
       { name: "cache_key_prefix", type: "STRING", value: String(args.cacheKeyPrefix || "").trim() },
       { name: "limit", type: "INT64", value: String(Math.max(1, Math.min(5000, Number(args.limit || 500)))) },
+      { name: "max_age_hours", type: "INT64", value: MAX_AGE_HOURS },
     ],
     { profile: options?.profile || PRECOMPUTED_PROFILE },
   );
