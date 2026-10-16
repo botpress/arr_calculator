@@ -89,6 +89,8 @@ export default function HomeDashboard() {
     return sync.failedTaskCount === 0 && daysSince(sync.finishedAtUtc) < 1.5;
   }, [data]);
 
+  const aiMax = useMemo(() => Math.max(1, ...(data?.aiSpend.monthly || []).map((m) => m.billed)), [data]);
+
   const trendMax = useMemo(() => {
     const totals = (data?.trend || []).map((p) => p.totalArr);
     if (data) totals.push(data.live.totalArr);
@@ -114,10 +116,8 @@ export default function HomeDashboard() {
     );
   }
 
-  const { live, aiSpend, lastMonth } = data;
-  const change = lastMonth ? live.totalArr - lastMonth.totalArr : null;
+  const { live, aiSpend, lastMonthChange } = data;
   const share = (value: number) => `${live.totalArr > 0 ? (value / live.totalArr) * 100 : 0}%`;
-  const aiSnapshotStale = daysSince(aiSpend.snapshotDate) > 2;
   const legacyDealCount = live.legacyByDeploymentType.reduce((sum, entry) => sum + entry.dealCount, 0);
   const trendBars = [
     ...data.trend.map((p) => ({ ...p, label: monthLabel(p.monthKey), isLive: false })),
@@ -154,9 +154,13 @@ export default function HomeDashboard() {
         <p className="home-label">Total ARR</p>
         <div className="home-hero__value">
           <span className="home-hero__number">{formatMoney(live.totalArr)}</span>
-          {change !== null && lastMonth && (
-            <span className={change >= 0 ? "home-good" : "home-bad"}>
-              {formatSignedMoney(change)} vs {monthLabel(lastMonth.monthKey)} month-end
+          {lastMonthChange && (
+            <span
+              className={lastMonthChange.change >= 0 ? "home-good" : "home-bad"}
+              title="Change between the last two completed month-ends. Today's figure isn't compared: Stripe cancellations take effect on the 1st, so mid-month totals run lower than month-ends."
+            >
+              {formatSignedMoney(lastMonthChange.change)} in {monthLabel(lastMonthChange.monthKey)} (month-end vs{" "}
+              {monthLabel(lastMonthChange.previousMonthKey)})
             </span>
           )}
         </div>
@@ -188,12 +192,11 @@ export default function HomeDashboard() {
             {legacyDealCount} deals · ends {formatDate(data.legacySunsetDate)}
           </p>
         </div>
-        <div className="home-tile" title="Usage billing (AI tokens, web search). Not part of ARR.">
+        <div className="home-tile" title="Usage billing (AI tokens, web search) invoiced last month, after prepaid offsets. Not part of ARR.">
           <p className="home-label">AI spend (not in ARR)</p>
-          <p className="home-tile__value">{formatMoney(aiSpend.monthToDate)}</p>
-          <p className={aiSnapshotStale ? "home-warn" : "home-muted"}>
-            This month so far · {formatMoney(aiSpend.annualizedRunRate)}/yr run rate
-            {aiSnapshotStale ? ` · data from ${formatDate(aiSpend.snapshotDate)}, not updating` : ""}
+          <p className="home-tile__value">{formatMoney(aiSpend.annualized)}/yr</p>
+          <p className="home-muted">
+            {formatMoney(aiSpend.lastMonthBilled)} billed in {aiSpend.lastMonthKey ? monthLabel(aiSpend.lastMonthKey) : "last month"} × 12
           </p>
         </div>
       </section>
@@ -215,6 +218,18 @@ export default function HomeDashboard() {
                   <div className="home-swatch--selfserve" style={{ flexGrow: bar.selfServeArr }} />
                 </div>
                 <span className="home-chart__label">{bar.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="home-label home-label--spaced">AI spend billed per month (not in ARR)</p>
+          <div className="home-chart home-chart--short">
+            {data.aiSpend.monthly.map((m) => (
+              <div key={m.monthKey} className="home-chart__col" title={`${monthLabel(m.monthKey, true)}: ${formatMoney(m.billed)} billed`}>
+                <span className="home-chart__total">{formatMoney(m.billed)}</span>
+                <div className="home-chart__stack" style={{ height: `${(m.billed / aiMax) * 100}%` }}>
+                  <div className="home-swatch--ai" style={{ flexGrow: 1 }} />
+                </div>
+                <span className="home-chart__label">{monthLabel(m.monthKey)}</span>
               </div>
             ))}
           </div>

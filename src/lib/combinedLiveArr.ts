@@ -47,6 +47,9 @@ export type CombinedLiveArrPayload = {
   legacyByDeploymentType: Array<{ deploymentType: string; arr: number; dealCount: number }>;
   legacyDeals: Array<{ dealId: string; dealName: string; accountName: string; deploymentType: string; arr: number }>;
   totalContractedArr: number;
+  // AI spend billed in the last full calendar month (usage invoices, after prepaid offsets).
+  aiSpendLastMonthStartDate: string;
+  aiSpendLastMonthAmount: number;
 };
 
 export const COMBINED_LIVE_ARR_CACHE_KEY = "api:combined-live-arr:v2";
@@ -364,5 +367,7 @@ export async function buildCombinedLiveArrPayload(): Promise<CombinedLiveArrPayl
     legacyByDeploymentType: legacy.legacyByDeploymentType,
     legacyDeals: legacy.legacyDeals,
     totalContractedArr: round2(currentMonthArr + legacy.legacyArr),
+    aiSpendLastMonthStartDate: lastMonthStartDate,
+    aiSpendLastMonthAmount: aiSpendLastCalendarMonth,
   };
 }

@@ -13,6 +13,7 @@
   --home-selfserve: #3b7cc9;
   --home-salesled: #1f4e8a;
   --home-legacy: #c98a3a;
+  --home-ai: #948c2d;
   max-width: 1180px;
   margin: 0 auto;
   padding: 24px 16px 64px;
@@ -118,6 +119,9 @@
 .home-swatch--selfserve { background: var(--home-selfserve); }
 .home-swatch--salesled { background: var(--home-salesled); }
 .home-swatch--legacy { background: var(--home-legacy); }
+.home-swatch--ai { background: var(--home-ai); }
+.home-label--spaced { margin-top: 22px; }
+.home-chart--short { height: 150px; }
 
 .home-tiles {
   display: grid;
