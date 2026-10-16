@@ -2429,3 +2429,77 @@ textarea:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+/* Renewals page (light-theme palette) */
+.renewals__summary {
+  margin: 0 0 0.9rem;
+  color: #050404;
+  font-size: 0.95rem;
+}
+
+.renewals__strong {
+  font-weight: 700;
+}
+
+.renewals__critical-text {
+  color: #b42318;
+}
+
+.renewals__muted {
+  margin-top: 0.2rem;
+  color: #625d54;
+  font-size: 0.72rem;
+}
+
+.renewals__muted a {
+  color: #2863b0;
+}
+
+.renewals__status {
+  display: inline-flex;
+  padding: 0.2rem 0.48rem;
+  border: 1px solid #e0dbd2;
+  background: #f8f7f4;
+  color: #050404;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.renewals__status--good {
+  border-color: #3d7a33;
+  color: #3d7a33;
+  background: rgba(61, 122, 51, 0.08);
+}
+
+.renewals__status--warning {
+  border-color: #8b4804;
+  color: #8b4804;
+  background: rgba(139, 72, 4, 0.08);
+}
+
+.renewals__status--critical {
+  border-color: #b42318;
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.renewals__warnings {
+  margin: 0 0 0.9rem;
+  border: 1px solid #e0dbd2;
+  background: #f8f7f4;
+  color: #8b4804;
+  padding: 0.68rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+.renewals__methodology p {
+  margin: 0 0 0.6rem;
+  color: #625d54;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.renewals__methodology strong {
+  color: #050404;
+}

@@ -13,6 +13,7 @@
     "test:billing-drafts": "node --experimental-strip-types --test tests/monthlyDraftInvoiceRules.test.mjs",
     "test:customer-history": "node --experimental-strip-types --test tests/customerMonthlyHistory.test.mjs",
     "test:migration": "node --experimental-strip-types --test tests/migrationRules.test.mjs",
+    "test:renewals": "node --experimental-strip-types --test tests/renewalsRules.test.mjs",
     "test:quota": "node --experimental-strip-types --test tests/salesQuotaRules.test.mjs",
     "test:gtm": "node --experimental-strip-types --test tests/gtm*.test.mjs",
     "test:scorecards": "node --experimental-strip-types --test tests/teamScorecardDefinitions.test.mjs",
