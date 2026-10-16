@@ -110,7 +110,7 @@ function RetentionSummaryStats({
         <p className="stripe-ui__stat-label">Net change</p>
         <p
           className="stripe-ui__stat-value"
-          style={{ color: metrics.netChange < 0 ? "#b91c1c" : metrics.netChange > 0 ? "#166534" : undefined }}
+          style={{ color: metrics.netChange < 0 ? "#b42318" : metrics.netChange > 0 ? "#3d7a33" : undefined }}
         >
           {signedMoney(metrics.netChange, currency)}
         </p>
@@ -165,7 +165,7 @@ function OwnerSection({
         </article>
         <article className="stripe-ui__stat">
           <p className="stripe-ui__stat-label">Net change</p>
-          <p className="stripe-ui__stat-value" style={{ color: owner.netChange < 0 ? "#b91c1c" : owner.netChange > 0 ? "#166534" : undefined }}>
+          <p className="stripe-ui__stat-value" style={{ color: owner.netChange < 0 ? "#b42318" : owner.netChange > 0 ? "#3d7a33" : undefined }}>
             {signedMoney(owner.netChange, data.targetCurrency)}
           </p>
         </article>
@@ -242,7 +242,7 @@ function OwnerSection({
                   </td>
                   <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>
                   <td>{formatMoney(account.currentArr, data.targetCurrency)}</td>
-                  <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
+                  <td style={{ color: account.netChange < 0 ? "#b42318" : account.netChange > 0 ? "#3d7a33" : undefined }}>
                     {signedMoney(account.netChange, data.targetCurrency)}
                   </td>
                   <td>{account.excludedFromNrr ? "Excluded" : formatAnnualizedNrr(account.nrrPct)}</td>
@@ -515,7 +515,7 @@ export default function AccountManagementPage() {
                       </td>
                       <td>{formatMoney(account.previousArr, data.targetCurrency)}</td>
                       <td>{formatMoney(account.currentArr, data.targetCurrency)}</td>
-                      <td style={{ color: account.netChange < 0 ? "#b91c1c" : account.netChange > 0 ? "#166534" : undefined }}>
+                      <td style={{ color: account.netChange < 0 ? "#b42318" : account.netChange > 0 ? "#3d7a33" : undefined }}>
                         {signedMoney(account.netChange, data.targetCurrency)}
                       </td>
                       <td>{account.excludedFromNrr ? "Excluded" : formatAnnualizedNrr(account.nrrPct)}</td>

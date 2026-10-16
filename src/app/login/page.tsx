@@ -40,14 +40,14 @@ export default async function LoginPage(props: { searchParams: LoginSearchParams
         style={{
           width: "100%",
           maxWidth: 420,
-          border: "1px solid #e5e7eb",
+          border: "1px solid #e0dbd2",
           borderRadius: 12,
           padding: 24,
-          background: "#ffffff",
+          background: "#f8f7f4",
         }}
       >
         <h1 style={{ margin: 0, fontSize: 22 }}>Sign in</h1>
-        <p style={{ marginTop: 10, marginBottom: 18, color: "#374151" }}>
+        <p style={{ marginTop: 10, marginBottom: 18, color: "#625d54" }}>
           Continue with your company Google account.
         </p>
 
@@ -56,9 +56,9 @@ export default async function LoginPage(props: { searchParams: LoginSearchParams
             style={{
               marginTop: 0,
               marginBottom: 14,
-              color: "#b91c1c",
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
+              color: "#b42318",
+              background: "#f8e3df",
+              border: "1px solid #e8b4aa",
               borderRadius: 8,
               padding: "10px 12px",
             }}

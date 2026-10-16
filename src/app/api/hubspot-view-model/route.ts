@@ -145,14 +145,14 @@ type ParsedPayload = {
 };
 
 const GROUP_LINE_COLORS = [
-  "#4f8df9",
-  "#1fc16b",
-  "#f59e0b",
-  "#ef4444",
-  "#14b8a6",
-  "#a78bfa",
-  "#f97316",
-  "#22c55e",
+  "#3b7cc9",
+  "#3d7a33",
+  "#b45309",
+  "#b42318",
+  "#0f766e",
+  "#7c5ce5",
+  "#c2410c",
+  "#15803d",
 ];
 
 const ALLOWED_GROUP_BY_FIELDS = new Set<GroupField>([

@@ -5,14 +5,14 @@ export default function EulaPage() {
     <main
       style={{
         minHeight: "100vh",
-        background: "#05070d",
-        color: "#e9f0ff",
+        background: "#f1f0ea",
+        color: "#050404",
         padding: "2rem 1rem",
       }}
     >
       <div style={{ maxWidth: "900px", margin: "0 auto" }}>
         <h1 style={{ marginTop: 0 }}>End User License Agreement (EULA)</h1>
-        <p style={{ color: "#9cb1d9" }}>Effective date: March 12, 2026</p>
+        <p style={{ color: "#625d54" }}>Effective date: March 12, 2026</p>
         <p>
           This End User License Agreement governs your use of ARR Calculator (the &quot;Service&quot;). By using
           the Service, you agree to this EULA.
