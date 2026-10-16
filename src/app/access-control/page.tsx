@@ -11,7 +11,7 @@ import {
 } from "@/lib/accessControlStore";
 import { normalizeAppRoles, type AppRole } from "@/lib/accessRoles";
 
-const REQUIRED_ADMINS = new Set<string>(["hany.safwat@botpress.com", "siya.gupta@botpress.com"]);
+const REQUIRED_ADMINS = new Set<string>(["anthony.courey@botpress.com", "frank.jessop@botpress.com"]);
 
 async function requireAdminUser() {
   const session = await getServerSession(authOptions);
