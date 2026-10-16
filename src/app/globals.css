@@ -129,6 +129,10 @@ body {
   user-select: none;
 }
 
+a.app-nav__summary {
+  text-decoration: none;
+}
+
 .app-nav__summary::-webkit-details-marker {
   display: none;
 }
