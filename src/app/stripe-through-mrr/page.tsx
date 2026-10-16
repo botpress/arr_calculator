@@ -1206,7 +1206,7 @@ export default function StripeThroughMrrPage() {
                   </button>
                 </p>
                 {createdCustomersWithSameMonthMrrCountError ? (
-                  <p className="stripe-ui__panel-subtitle" style={{ marginTop: "0.35rem", color: "#b91c1c" }}>
+                  <p className="stripe-ui__panel-subtitle" style={{ marginTop: "0.35rem", color: "#b42318" }}>
                     Metric error: {createdCustomersWithSameMonthMrrCountError}
                   </p>
                 ) : null}
@@ -1218,7 +1218,7 @@ export default function StripeThroughMrrPage() {
                   <p className="stripe-ui__panel-subtitle" style={{ margin: 0 }}>Loading included customers...</p>
                 ) : null}
                 {createdCustomersWithSameMonthMrrRowsError ? (
-                  <p className="stripe-ui__panel-subtitle" style={{ margin: 0, color: "#b91c1c" }}>
+                  <p className="stripe-ui__panel-subtitle" style={{ margin: 0, color: "#b42318" }}>
                     {createdCustomersWithSameMonthMrrRowsError}
                   </p>
                 ) : null}

@@ -156,11 +156,11 @@ export default function QuickBooksPage() {
         <section
           className="stripe-ui__panel ui-reveal ui-reveal-1"
           style={{
-            borderColor: oauthBanner.kind === "error" ? "#a53555" : "#2e6d4d",
-            background: oauthBanner.kind === "error" ? "#25101b" : "#0f2419",
+            borderColor: oauthBanner.kind === "error" ? "#e8b4aa" : "#b9d1ae",
+            background: oauthBanner.kind === "error" ? "#f8e3df" : "#e6efdf",
           }}
         >
-          <p className="stripe-ui__panel-subtitle" style={{ margin: 0, color: "#dbe8ff" }}>
+          <p className="stripe-ui__panel-subtitle" style={{ margin: 0, color: "#050404" }}>
             {oauthBanner.text}
           </p>
           {oauthBanner.kind === "error" && oauthFlowExpectedRealmId ? (

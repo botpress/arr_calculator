@@ -456,10 +456,10 @@ function LineChartCard<TPoint extends LineChartPointBase>({
               y1={paddingTop + plotHeight}
               x2={paddingLeft + plotWidth}
               y2={paddingTop + plotHeight}
-              stroke="#36557f"
+              stroke="#c9c2b6"
               strokeWidth={1}
             />
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
             {points.map((point, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -485,7 +485,7 @@ function LineChartCard<TPoint extends LineChartPointBase>({
                 y1={paddingTop}
                 x2={xAt(hoverIndex)}
                 y2={paddingTop + plotHeight}
-                stroke="#89a9d4"
+                stroke="#8b857c"
                 strokeOpacity={0.5}
                 strokeDasharray="4 4"
               />
@@ -493,8 +493,8 @@ function LineChartCard<TPoint extends LineChartPointBase>({
 
             {hoveredPoint && (
               <g>
-                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                   {hoveredPoint.label}
                 </text>
                 <text x={tooltipX + 10} y={tooltipY + 32} fill={stroke} fontSize="12.5" fontWeight="600">
@@ -521,17 +521,17 @@ function LineChartCard<TPoint extends LineChartPointBase>({
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(maxValue)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(minValue)}
             </text>
           </svg>
@@ -703,10 +703,10 @@ function GroupedSourceLineChartCard({
               y1={paddingTop + plotHeight}
               x2={paddingLeft + plotWidth}
               y2={paddingTop + plotHeight}
-              stroke="#36557f"
+              stroke="#c9c2b6"
               strokeWidth={1}
             />
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
             {series.map((item) => (
               <path
@@ -726,7 +726,7 @@ function GroupedSourceLineChartCard({
                 y1={paddingTop}
                 x2={xAt(hoverIndex)}
                 y2={paddingTop + plotHeight}
-                stroke="#89a9d4"
+                stroke="#8b857c"
                 strokeOpacity={0.5}
                 strokeDasharray="4 4"
               />
@@ -734,8 +734,8 @@ function GroupedSourceLineChartCard({
 
             {hoveredPoint && (
               <g>
-                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                   {hoveredPoint.label}
                 </text>
                 {series.map((item, idx) => {
@@ -778,17 +778,17 @@ function GroupedSourceLineChartCard({
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === basePoints.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {basePoints[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(maxValue)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(minValue)}
             </text>
           </svg>
@@ -923,10 +923,10 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
               y1={paddingTop + plotHeight}
               x2={paddingLeft + plotWidth}
               y2={paddingTop + plotHeight}
-              stroke="#36557f"
+              stroke="#c9c2b6"
               strokeWidth={1}
             />
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
             {points.map((point, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -945,7 +945,7 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
               );
             })}
 
-            <path d={pathD} fill="none" stroke="#06b6d4" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={pathD} fill="none" stroke="#0e7490" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
 
             {hoverIndex != null && points[hoverIndex] && (
               <line
@@ -953,7 +953,7 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
                 y1={paddingTop}
                 x2={xAt(hoverIndex)}
                 y2={paddingTop + plotHeight}
-                stroke="#89a9d4"
+                stroke="#8b857c"
                 strokeOpacity={0.5}
                 strokeDasharray="4 4"
               />
@@ -961,17 +961,17 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
 
             {hoveredPoint && (
               <g>
-                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                   {hoveredPoint.label}
                 </text>
-                <text x={tooltipX + 10} y={tooltipY + 33} fill="#06b6d4" fontSize="12.5" fontWeight="600">
+                <text x={tooltipX + 10} y={tooltipY + 33} fill="#0e7490" fontSize="12.5" fontWeight="600">
                   ARR/FTE: {formatMoney(hoveredPoint.arrPerEmployee, currency)}
                 </text>
-                <text x={tooltipX + 10} y={tooltipY + 50} fill="#d9e6fa" fontSize="11.5">
+                <text x={tooltipX + 10} y={tooltipY + 50} fill="#050404" fontSize="11.5">
                   ARR: {formatMoney(hoveredPoint.arr, currency)}
                 </text>
-                <text x={tooltipX + 10} y={tooltipY + 65} fill="#d9e6fa" fontSize="11.5">
+                <text x={tooltipX + 10} y={tooltipY + 65} fill="#050404" fontSize="11.5">
                   FTE: {Math.max(0, Math.round(hoveredPoint.fullTimeEmployees || 0))}
                 </text>
               </g>
@@ -983,7 +983,7 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
                 cx={xAt(idx)}
                 cy={yAt(point.arrPerEmployee)}
                 r={hoverIndex === idx ? 4.6 : 3.2}
-                fill="#06b6d4"
+                fill="#0e7490"
                 onMouseEnter={() => setHoverIndex(idx)}
                 onClick={() => setSelectedIndex(idx)}
               />
@@ -995,17 +995,17 @@ function ArrPerEmployeeChartCard({ points, currency }: ArrPerEmployeeChartCardPr
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(maxValue, currency)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(minValue, currency)}
             </text>
             </svg>
@@ -1183,10 +1183,10 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
                 y1={paddingTop + plotHeight}
                 x2={paddingLeft + plotWidth}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
-              <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+              <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
               {points.map((point, idx) => {
                 const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -1204,7 +1204,7 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
                 );
               })}
 
-              <path d={pathD} fill="none" stroke="#a855f7" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+              <path d={pathD} fill="none" stroke="#7c3aed" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
 
               {hoverIndex != null && points[hoverIndex] && (
                 <line
@@ -1212,7 +1212,7 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
                   y1={paddingTop}
                   x2={xAt(hoverIndex)}
                   y2={paddingTop + plotHeight}
-                  stroke="#89a9d4"
+                  stroke="#8b857c"
                   strokeOpacity={0.5}
                   strokeDasharray="4 4"
                 />
@@ -1220,20 +1220,20 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
 
               {hoveredPoint && (
                 <g>
-                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                     {hoveredPoint.label}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 33} fill="#a855f7" fontSize="12.5" fontWeight="600">
+                  <text x={tooltipX + 10} y={tooltipY + 33} fill="#7c3aed" fontSize="12.5" fontWeight="600">
                     LTV: {formatMoney(hoveredPoint.ltv, currency)}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#d9e6fa" fontSize="11.5">
+                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#050404" fontSize="11.5">
                     ARR: {formatMoney(hoveredPoint.totalArr, currency)}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 65} fill="#d9e6fa" fontSize="11.5">
+                  <text x={tooltipX + 10} y={tooltipY + 65} fill="#050404" fontSize="11.5">
                     Churn: {Math.max(0, Math.round(hoveredPoint.churnedCustomers || 0))} users ({formatPercent(hoveredPoint.churnRatePct)})
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 80} fill="#d9e6fa" fontSize="11.5">
+                  <text x={tooltipX + 10} y={tooltipY + 80} fill="#050404" fontSize="11.5">
                     Total Users: {Math.max(0, Math.round(hoveredPoint.activeCustomers || 0))}
                   </text>
                 </g>
@@ -1245,7 +1245,7 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
                   cx={xAt(idx)}
                   cy={yAt(point.ltv)}
                   r={hoverIndex === idx ? 4.6 : 3.2}
-                  fill="#a855f7"
+                  fill="#7c3aed"
                   onMouseEnter={() => setHoverIndex(idx)}
                 />
               ))}
@@ -1256,17 +1256,17 @@ function LtvChartCard({ points, currency }: LtvChartCardProps) {
                   x={xAt(idx)}
                   y={height - 12}
                   textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                  fill="#b7c9e6"
+                  fill="#625d54"
                   fontSize="12"
                 >
                   {points[idx]?.label || ""}
                 </text>
               ))}
 
-              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatMoney(maxValue, currency)}
               </text>
-              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatMoney(minValue, currency)}
               </text>
             </svg>
@@ -1355,7 +1355,7 @@ function CacChartCard({
   currency,
   title = "CAC Over Time",
   subtitle = "CAC = Sales & Marketing Cost / Total Users. Click the chart to open the data table.",
-  accentColor = "#e879f9",
+  accentColor = "#a21caf",
   downloadFilename = "combined-billing-overview-cac-over-time",
   tableTitle = "CAC Table",
   tableAriaLabel = "CAC table",
@@ -1524,7 +1524,7 @@ function CacChartCard({
                 zIndex: 30,
                 width: "min(460px, 92vw)",
                 padding: "0.85rem",
-                borderColor: "#3e5e89",
+                borderColor: "#c9c2b6",
               }}
               role="menu"
             >
@@ -1561,7 +1561,7 @@ function CacChartCard({
               ) : null}
 
               {accountsError ? (
-                <div className="stripe-ui__hint" style={{ color: "#f4a4b7", marginBottom: "0.55rem" }}>
+                <div className="stripe-ui__hint" style={{ color: "#b42318", marginBottom: "0.55rem" }}>
                   {accountsError}
                 </div>
               ) : null}
@@ -1638,7 +1638,7 @@ function CacChartCard({
                 y1={paddingTop + plotHeight}
                 x2={paddingLeft + plotWidth}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
               <line
@@ -1646,7 +1646,7 @@ function CacChartCard({
                 y1={paddingTop}
                 x2={paddingLeft}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
 
@@ -1674,7 +1674,7 @@ function CacChartCard({
                   y1={paddingTop}
                   x2={xAt(hoverIndex)}
                   y2={paddingTop + plotHeight}
-                  stroke="#89a9d4"
+                  stroke="#8b857c"
                   strokeOpacity={0.5}
                   strokeDasharray="4 4"
                 />
@@ -1682,17 +1682,17 @@ function CacChartCard({
 
               {hoveredPoint && (
                 <g>
-                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                     {hoveredPoint.label}
                   </text>
                   <text x={tooltipX + 10} y={tooltipY + 33} fill={accentColor} fontSize="12.5" fontWeight="600">
                     CAC: {formatMoney(hoveredPoint.cac, currency)}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#d9e6fa" fontSize="11.5">
+                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#050404" fontSize="11.5">
                     S&M Cost: {formatMoney(hoveredPoint.salesMarketingCost, currency)}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 65} fill="#d9e6fa" fontSize="11.5">
+                  <text x={tooltipX + 10} y={tooltipY + 65} fill="#050404" fontSize="11.5">
                     Total Users: {Math.max(0, Math.round(hoveredPoint.newCustomerCount || 0))}
                   </text>
                 </g>
@@ -1716,17 +1716,17 @@ function CacChartCard({
                   x={xAt(idx)}
                   y={height - 12}
                   textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                  fill="#b7c9e6"
+                  fill="#625d54"
                   fontSize="12"
                 >
                   {points[idx]?.label || ""}
                 </text>
               ))}
 
-              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatMoney(maxValue, currency)}
               </text>
-              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatMoney(minValue, currency)}
               </text>
             </svg>
@@ -1929,8 +1929,8 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
       </div>
 
       <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap", marginTop: "0.65rem" }}>
-        <span className="stripe-ui__hint" style={{ color: "#4f8df9" }}>NDR</span>
-        <span className="stripe-ui__hint" style={{ color: "#ef4444" }}>GDR</span>
+        <span className="stripe-ui__hint" style={{ color: "#3b7cc9" }}>NDR</span>
+        <span className="stripe-ui__hint" style={{ color: "#b42318" }}>GDR</span>
       </div>
 
       {points.length === 0 ? (
@@ -1962,7 +1962,7 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                 y1={paddingTop + plotHeight}
                 x2={paddingLeft + plotWidth}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
               <line
@@ -1970,7 +1970,7 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                 y1={paddingTop}
                 x2={paddingLeft}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
 
@@ -1990,8 +1990,8 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                 );
               })}
 
-              <path d={ndrPath} fill="none" stroke="#4f8df9" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-              <path d={gdrPath} fill="none" stroke="#ef4444" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+              <path d={ndrPath} fill="none" stroke="#3b7cc9" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+              <path d={gdrPath} fill="none" stroke="#b42318" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
 
               {hoverIndex != null && points[hoverIndex] && (
                 <line
@@ -1999,7 +1999,7 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                   y1={paddingTop}
                   x2={xAt(hoverIndex)}
                   y2={paddingTop + plotHeight}
-                  stroke="#89a9d4"
+                  stroke="#8b857c"
                   strokeOpacity={0.5}
                   strokeDasharray="4 4"
                 />
@@ -2007,14 +2007,14 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
 
               {hoveredPoint && (
                 <g>
-                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                  <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                  <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                     {hoveredPoint.label}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 33} fill="#4f8df9" fontSize="12.5" fontWeight="600">
+                  <text x={tooltipX + 10} y={tooltipY + 33} fill="#3b7cc9" fontSize="12.5" fontWeight="600">
                     NDR: {formatPercent(hoveredNdr)}
                   </text>
-                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#ef4444" fontSize="12.5" fontWeight="600">
+                  <text x={tooltipX + 10} y={tooltipY + 50} fill="#b42318" fontSize="12.5" fontWeight="600">
                     GDR: {formatPercent(hoveredGdr)}
                   </text>
                 </g>
@@ -2026,7 +2026,7 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                     cx={xAt(idx)}
                     cy={yAt(ndrFor(point))}
                     r={hoverIndex === idx ? 4.6 : 3.2}
-                    fill="#4f8df9"
+                    fill="#3b7cc9"
                     data-tooltip={`${point.label}: NDR ${formatPercent(ndrFor(point))}`}
                     onMouseEnter={() => setHoverIndex(idx)}
                   />
@@ -2034,7 +2034,7 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                     cx={xAt(idx)}
                     cy={yAt(gdrFor(point))}
                     r={hoverIndex === idx ? 4.6 : 3.2}
-                    fill="#ef4444"
+                    fill="#b42318"
                     data-tooltip={`${point.label}: GDR ${formatPercent(gdrFor(point))}`}
                     onMouseEnter={() => setHoverIndex(idx)}
                   />
@@ -2047,17 +2047,17 @@ function RetentionRatesChartCard({ points }: RetentionRatesChartCardProps) {
                   x={xAt(idx)}
                   y={height - 12}
                   textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                  fill="#b7c9e6"
+                  fill="#625d54"
                   fontSize="12"
                 >
                   {points[idx]?.label || ""}
                 </text>
               ))}
 
-              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatPercent(maxValue)}
               </text>
-              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
                 {formatPercent(minValue)}
               </text>
             </svg>
@@ -2172,10 +2172,10 @@ function GrowthBreakdownChart({ points, currency }: GrowthBreakdownChartProps) {
 
   const bars = points.map((point) => {
     const components = [
-      { key: "new", label: "New", value: point.newMrr, color: "#1fc16b" },
-      { key: "expansion", label: "Expansion", value: point.expansionMrr, color: "#2698f0" },
-      { key: "contraction", label: "Contraction", value: point.contractionMrr, color: "#f59e0b" },
-      { key: "churn", label: "Churn", value: point.churnMrr, color: "#ef4444" },
+      { key: "new", label: "New", value: point.newMrr, color: "#3d7a33" },
+      { key: "expansion", label: "Expansion", value: point.expansionMrr, color: "#2863b0" },
+      { key: "contraction", label: "Contraction", value: point.contractionMrr, color: "#b45309" },
+      { key: "churn", label: "Churn", value: point.churnMrr, color: "#b42318" },
     ] as const;
 
     const positiveTotal = components.reduce((sum, component) => sum + Math.max(component.value, 0), 0);
@@ -2240,10 +2240,10 @@ function GrowthBreakdownChart({ points, currency }: GrowthBreakdownChartProps) {
       </div>
 
       <div style={{ display: "flex", gap: "0.8rem", flexWrap: "wrap", marginTop: "0.7rem" }}>
-        <span className="stripe-ui__hint" style={{ color: "#1fc16b" }}>New</span>
-        <span className="stripe-ui__hint" style={{ color: "#2698f0" }}>Expansion</span>
-        <span className="stripe-ui__hint" style={{ color: "#f59e0b" }}>Contraction</span>
-        <span className="stripe-ui__hint" style={{ color: "#ef4444" }}>Churn</span>
+        <span className="stripe-ui__hint" style={{ color: "#3d7a33" }}>New</span>
+        <span className="stripe-ui__hint" style={{ color: "#2863b0" }}>Expansion</span>
+        <span className="stripe-ui__hint" style={{ color: "#b45309" }}>Contraction</span>
+        <span className="stripe-ui__hint" style={{ color: "#b42318" }}>Churn</span>
       </div>
 
       {points.length === 0 ? (
@@ -2268,8 +2268,8 @@ function GrowthBreakdownChart({ points, currency }: GrowthBreakdownChartProps) {
               setHoverIndex(idx);
             }}
           >
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
-            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#5073a3" strokeWidth={1.2} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
+            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#8b857c" strokeWidth={1.2} />
 
             {bars.map((bar, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -2346,17 +2346,17 @@ function GrowthBreakdownChart({ points, currency }: GrowthBreakdownChartProps) {
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(maxValue, currency)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(minValue, currency)}
             </text>
           </svg>
@@ -2476,8 +2476,8 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
               setHoverIndex(idx);
             }}
           >
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
-            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#5073a3" strokeWidth={1.2} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
+            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#8b857c" strokeWidth={1.2} />
 
             {points.map((point, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -2487,7 +2487,7 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
               const y0 = yAt(0);
               const y = Math.min(yVal, y0);
               const h = Math.max(1.2, Math.abs(yVal - y0));
-              const fill = value >= 0 ? "#1fc16b" : "#ef4444";
+              const fill = value >= 0 ? "#3d7a33" : "#b42318";
               return (
                 <g key={point.key}>
                   <rect
@@ -2518,17 +2518,17 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(maxValue)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(minValue)}
             </text>
           </svg>
@@ -3332,17 +3332,17 @@ export default function CombinedBillingOverviewPage() {
                 points={linePoints}
                 valueAccessor={(p) => p.mrrEnd}
                 valueFormatter={(v) => formatMoney(v, currency)}
-                stroke="#4f8df9"
+                stroke="#3b7cc9"
               />
             ) : (
               <GroupedSourceLineChartCard
                 title="MRR Over Time"
                 subtitle="MRR by source."
                 series={[
-                  { id: "hubspot", label: "HubSpot", color: "#4f8df9", points: lineSourcePoints.hubspot },
-                  { id: "selfserve", label: "Self-serve", color: "#1fc16b", points: lineSourcePoints.selfserve },
-                  { id: "sales_assist", label: "Sales assist", color: "#14b8a6", points: lineSourcePoints.salesAssist },
-                  { id: "ai", label: "AI spend", color: "#f59e0b", points: lineSourcePoints.aiSpend },
+                  { id: "hubspot", label: "HubSpot", color: "#3b7cc9", points: lineSourcePoints.hubspot },
+                  { id: "selfserve", label: "Self-serve", color: "#3d7a33", points: lineSourcePoints.selfserve },
+                  { id: "sales_assist", label: "Sales assist", color: "#0f766e", points: lineSourcePoints.salesAssist },
+                  { id: "ai", label: "AI spend", color: "#b45309", points: lineSourcePoints.aiSpend },
                 ]}
                 valueAccessor={(p) => p.mrrEnd}
                 valueFormatter={(v) => formatMoney(v, currency)}
@@ -3381,7 +3381,7 @@ export default function CombinedBillingOverviewPage() {
                   )}
                 </div>
                 {aiSpendBreakdownCsvError ? (
-                  <p className="stripe-ui__hint" style={{ marginTop: "0.45rem", color: "#fca5a5" }}>
+                  <p className="stripe-ui__hint" style={{ marginTop: "0.45rem", color: "#b42318" }}>
                     {aiSpendBreakdownCsvError}
                   </p>
                 ) : null}
@@ -3465,7 +3465,7 @@ export default function CombinedBillingOverviewPage() {
                 points={linePoints}
                 valueAccessor={(p) => p.mrrGrowthRatePct}
                 valueFormatter={(v) => formatPercent(v)}
-                stroke="#f59e0b"
+                stroke="#b45309"
                 includeZero
               />
             ) : (
@@ -3473,10 +3473,10 @@ export default function CombinedBillingOverviewPage() {
                 title="MRR Growth Rate Over Time"
                 subtitle="MRR growth rate by source."
                 series={[
-                  { id: "hubspot", label: "HubSpot", color: "#4f8df9", points: lineSourcePoints.hubspot },
-                  { id: "selfserve", label: "Self-serve", color: "#1fc16b", points: lineSourcePoints.selfserve },
-                  { id: "sales_assist", label: "Sales assist", color: "#14b8a6", points: lineSourcePoints.salesAssist },
-                  { id: "ai", label: "AI spend", color: "#f59e0b", points: lineSourcePoints.aiSpend },
+                  { id: "hubspot", label: "HubSpot", color: "#3b7cc9", points: lineSourcePoints.hubspot },
+                  { id: "selfserve", label: "Self-serve", color: "#3d7a33", points: lineSourcePoints.selfserve },
+                  { id: "sales_assist", label: "Sales assist", color: "#0f766e", points: lineSourcePoints.salesAssist },
+                  { id: "ai", label: "AI spend", color: "#b45309", points: lineSourcePoints.aiSpend },
                 ]}
                 valueAccessor={(p) => p.mrrGrowthRatePct}
                 valueFormatter={(v) => formatPercent(v)}
@@ -3492,17 +3492,17 @@ export default function CombinedBillingOverviewPage() {
                 points={linePoints}
                 valueAccessor={(p) => p.arr}
                 valueFormatter={(v) => formatMoney(v, currency)}
-                stroke="#1fc16b"
+                stroke="#3d7a33"
               />
             ) : (
               <GroupedSourceLineChartCard
                 title="ARR Over Time"
                 subtitle="ARR by source."
                 series={[
-                  { id: "hubspot", label: "HubSpot", color: "#4f8df9", points: lineSourcePoints.hubspot },
-                  { id: "selfserve", label: "Self-serve", color: "#1fc16b", points: lineSourcePoints.selfserve },
-                  { id: "sales_assist", label: "Sales assist", color: "#14b8a6", points: lineSourcePoints.salesAssist },
-                  { id: "ai", label: "AI spend", color: "#f59e0b", points: lineSourcePoints.aiSpend },
+                  { id: "hubspot", label: "HubSpot", color: "#3b7cc9", points: lineSourcePoints.hubspot },
+                  { id: "selfserve", label: "Self-serve", color: "#3d7a33", points: lineSourcePoints.selfserve },
+                  { id: "sales_assist", label: "Sales assist", color: "#0f766e", points: lineSourcePoints.salesAssist },
+                  { id: "ai", label: "AI spend", color: "#b45309", points: lineSourcePoints.aiSpend },
                 ]}
                 valueAccessor={(p) => p.arr}
                 valueFormatter={(v) => formatMoney(v, currency)}
@@ -3526,7 +3526,7 @@ export default function CombinedBillingOverviewPage() {
               points={salesCyclePoints}
               valueAccessor={(p) => p.avgSalesCycleDays}
               valueFormatter={(v) => formatDays(v)}
-              stroke="#60a5fa"
+              stroke="#3b7cc9"
               includeZero
             />
 

@@ -10,9 +10,9 @@ export default function GoogleSignInButton({ callbackUrl }: { callbackUrl: strin
       style={{
         width: "100%",
         borderRadius: 10,
-        border: "1px solid #d1d5db",
-        background: "#111827",
-        color: "#ffffff",
+        border: "1px solid #050404",
+        background: "#050404",
+        color: "#f8f7f4",
         padding: "10px 12px",
         fontSize: 14,
         fontWeight: 600,

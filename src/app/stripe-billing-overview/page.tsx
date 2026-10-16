@@ -17,14 +17,14 @@ const CHART_GROUP_OPTIONS: Array<{ key: ChartGroupBy; label: string }> = [
 ];
 
 const GROUP_LINE_COLORS = [
-  "#4f8df9",
-  "#1fc16b",
-  "#f59e0b",
-  "#ef4444",
-  "#14b8a6",
-  "#a78bfa",
-  "#f97316",
-  "#22c55e",
+  "#3b7cc9",
+  "#3d7a33",
+  "#b45309",
+  "#b42318",
+  "#0f766e",
+  "#7c5ce5",
+  "#c2410c",
+  "#15803d",
 ];
 
 type OverviewPoint = {
@@ -412,10 +412,10 @@ function LineChartCard({
               y1={paddingTop + plotHeight}
               x2={paddingLeft + plotWidth}
               y2={paddingTop + plotHeight}
-              stroke="#36557f"
+              stroke="#c9c2b6"
               strokeWidth={1}
             />
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
             {points.map((point, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -442,7 +442,7 @@ function LineChartCard({
                 y1={paddingTop}
                 x2={xAt(hoverIndex)}
                 y2={paddingTop + plotHeight}
-                stroke="#89a9d4"
+                stroke="#8b857c"
                 strokeOpacity={0.5}
                 strokeDasharray="4 4"
               />
@@ -450,8 +450,8 @@ function LineChartCard({
 
             {hoveredPoint && (
               <g>
-                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#0e203b" opacity={0.97} />
-                <text x={tooltipX + 10} y={tooltipY + 16} fill="#d9e6fa" fontSize="11.5">
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx={6} fill="#f8f7f4" stroke="#c9c2b6" opacity={0.97} />
+                <text x={tooltipX + 10} y={tooltipY + 16} fill="#050404" fontSize="11.5">
                   {hoveredPoint.label}
                 </text>
                 <text x={tooltipX + 10} y={tooltipY + 32} fill={stroke} fontSize="12.5" fontWeight="600">
@@ -478,17 +478,17 @@ function LineChartCard({
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(maxValue)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(minValue)}
             </text>
           </svg>
@@ -622,10 +622,10 @@ function MultiLineChartCard({
                 y1={paddingTop + plotHeight}
                 x2={paddingLeft + plotWidth}
                 y2={paddingTop + plotHeight}
-                stroke="#36557f"
+                stroke="#c9c2b6"
                 strokeWidth={1}
               />
-              <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
+              <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
 
               {periods.map((period, idx) => {
                 const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -666,7 +666,7 @@ function MultiLineChartCard({
                   y1={paddingTop}
                   x2={xAt(hoverIndex)}
                   y2={paddingTop + plotHeight}
-                  stroke="#89a9d4"
+                  stroke="#8b857c"
                   strokeOpacity={0.5}
                   strokeDasharray="4 4"
                 />
@@ -692,17 +692,17 @@ function MultiLineChartCard({
                   x={xAt(idx)}
                   y={height - 12}
                   textAnchor={idx === 0 ? "start" : idx === periods.length - 1 ? "end" : "middle"}
-                  fill="#b7c9e6"
+                  fill="#625d54"
                   fontSize="12"
                 >
                   {periods[idx]?.label || ""}
                 </text>
               ))}
 
-              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
                 {valueFormatter(maxValue)}
               </text>
-              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+              <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
                 {valueFormatter(minValue)}
               </text>
             </svg>
@@ -759,20 +759,20 @@ function GrowthBreakdownChart({
   const plotHeight = height - paddingTop - paddingBottom;
 
   const componentDefs = [
-    { key: "new", label: "New", color: "#1fc16b", valueAccessor: (point: OverviewPoint) => point.newMrr },
+    { key: "new", label: "New", color: "#3d7a33", valueAccessor: (point: OverviewPoint) => point.newMrr },
     ...(includeReactivation
       ? [
           {
             key: "reactivation",
             label: "Reactivation",
-            color: "#22d3ee",
+            color: "#0e7490",
             valueAccessor: (point: OverviewPoint) => point.reactivationMrr || 0,
           },
         ]
       : []),
-    { key: "expansion", label: "Expansion", color: "#2698f0", valueAccessor: (point: OverviewPoint) => point.expansionMrr },
-    { key: "contraction", label: "Contraction", color: "#f59e0b", valueAccessor: (point: OverviewPoint) => point.contractionMrr },
-    { key: "churn", label: "Churn", color: "#ef4444", valueAccessor: (point: OverviewPoint) => point.churnMrr },
+    { key: "expansion", label: "Expansion", color: "#2863b0", valueAccessor: (point: OverviewPoint) => point.expansionMrr },
+    { key: "contraction", label: "Contraction", color: "#b45309", valueAccessor: (point: OverviewPoint) => point.contractionMrr },
+    { key: "churn", label: "Churn", color: "#b42318", valueAccessor: (point: OverviewPoint) => point.churnMrr },
   ];
 
   const bars = points.map((point) => {
@@ -873,8 +873,8 @@ function GrowthBreakdownChart({
               setHoverIndex(idx);
             }}
           >
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
-            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#5073a3" strokeWidth={1.2} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
+            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#8b857c" strokeWidth={1.2} />
 
             {bars.map((bar, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -951,17 +951,17 @@ function GrowthBreakdownChart({
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(maxValue, currency)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {formatMoney(minValue, currency)}
             </text>
           </svg>
@@ -1084,8 +1084,8 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
               setHoverIndex(idx);
             }}
           >
-            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#36557f" strokeWidth={1} />
-            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#5073a3" strokeWidth={1.2} />
+            <line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke="#c9c2b6" strokeWidth={1} />
+            <line x1={paddingLeft} y1={zeroY} x2={paddingLeft + plotWidth} y2={zeroY} stroke="#8b857c" strokeWidth={1.2} />
 
             {points.map((point, idx) => {
               const left = idx === 0 ? paddingLeft : (xAt(idx - 1) + xAt(idx)) / 2;
@@ -1095,7 +1095,7 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
               const y0 = yAt(0);
               const y = Math.min(yVal, y0);
               const h = Math.max(1.2, Math.abs(yVal - y0));
-              const fill = value >= 0 ? "#1fc16b" : "#ef4444";
+              const fill = value >= 0 ? "#3d7a33" : "#b42318";
               return (
                 <g key={point.key}>
                   <rect
@@ -1126,17 +1126,17 @@ function DeltaBarChartCard({ title, subtitle, points, valueAccessor, valueFormat
                 x={xAt(idx)}
                 y={height - 12}
                 textAnchor={idx === 0 ? "start" : idx === points.length - 1 ? "end" : "middle"}
-                fill="#b7c9e6"
+                fill="#625d54"
                 fontSize="12"
               >
                 {points[idx]?.label || ""}
               </text>
             ))}
 
-            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + 10} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(maxValue)}
             </text>
-            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#8ea7cb" fontSize="12">
+            <text x={paddingLeft - 8} y={paddingTop + plotHeight} textAnchor="end" fill="#625d54" fontSize="12">
               {valueFormatter(minValue)}
             </text>
           </svg>
@@ -1588,7 +1588,7 @@ export default function StripeBillingOverviewPage() {
                         className="stripe-ui__chip"
                         style={{
                           borderColor: selectedBarGroupKeys.includes(series.key) ? series.color : undefined,
-                          color: selectedBarGroupKeys.includes(series.key) ? "#dbe7fb" : undefined,
+                          color: selectedBarGroupKeys.includes(series.key) ? "#050404" : undefined,
                           boxShadow: selectedBarGroupKeys.includes(series.key)
                             ? `inset 0 0 0 1px ${series.color}`
                             : undefined,
@@ -1646,7 +1646,7 @@ export default function StripeBillingOverviewPage() {
                 points={points}
                 valueAccessor={(p) => p.mrrEnd}
                 valueFormatter={(v) => formatMoney(v, currency)}
-                stroke="#4f8df9"
+                stroke="#3b7cc9"
               />
             )}
 
@@ -1662,7 +1662,7 @@ export default function StripeBillingOverviewPage() {
                 points={currentMonthProjectionChartPoints}
                 valueAccessor={(p) => p.mrrEnd}
                 valueFormatter={(v) => formatMoney(v, currency)}
-                stroke="#22c55e"
+                stroke="#15803d"
               />
             ) : (
               <section className="stripe-ui__panel ui-reveal ui-reveal-2">
@@ -1725,7 +1725,7 @@ export default function StripeBillingOverviewPage() {
                 points={points}
                 valueAccessor={(p) => mrrGrowthByKey.get(p.key) || 0}
                 valueFormatter={(v) => formatPercent(v)}
-                stroke="#f59e0b"
+                stroke="#b45309"
                 includeZero
                 headerControl={
                   <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", flexWrap: "wrap" }}>
@@ -1766,7 +1766,7 @@ export default function StripeBillingOverviewPage() {
                 points={points}
                 valueAccessor={(p) => p.arr}
                 valueFormatter={(v) => formatMoney(v, currency)}
-                stroke="#1fc16b"
+                stroke="#3d7a33"
               />
             )}
 

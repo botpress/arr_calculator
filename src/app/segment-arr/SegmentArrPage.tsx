@@ -342,7 +342,7 @@ export default function SegmentArrPage({
 
       {error ? (
         <section className="stripe-ui__panel ui-reveal ui-reveal-2">
-          <p className="stripe-ui__hint" style={{ color: "#fca5a5" }}>
+          <p className="stripe-ui__hint" style={{ color: "#b42318" }}>
             {error}
           </p>
         </section>

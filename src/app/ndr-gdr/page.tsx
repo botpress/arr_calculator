@@ -229,7 +229,7 @@ export default function NdrGdrPage() {
       {error ? (
         <section className="stripe-ui__panel ui-reveal ui-reveal-2">
           <h2 className="stripe-ui__panel-title">Error</h2>
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fecaca" }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318" }}>
             {error}
           </p>
         </section>
@@ -249,7 +249,7 @@ export default function NdrGdrPage() {
           {(data.warnings || []).length ? (
             <div style={{ marginTop: "0.7rem" }}>
               {data.warnings?.map((warning, idx) => (
-                <p key={`warning-${idx}`} className="stripe-ui__hint" style={{ color: "#fbbf24", marginBottom: "0.25rem" }}>
+                <p key={`warning-${idx}`} className="stripe-ui__hint" style={{ color: "#8b4804", marginBottom: "0.25rem" }}>
                   {warning}
                 </p>
               ))}

@@ -5,14 +5,14 @@ export default function PrivacyPolicyPage() {
     <main
       style={{
         minHeight: "100vh",
-        background: "#05070d",
-        color: "#e9f0ff",
+        background: "#f1f0ea",
+        color: "#050404",
         padding: "2rem 1rem",
       }}
     >
       <div style={{ maxWidth: "900px", margin: "0 auto" }}>
         <h1 style={{ marginTop: 0 }}>Privacy Policy</h1>
-        <p style={{ color: "#9cb1d9" }}>Effective date: March 12, 2026</p>
+        <p style={{ color: "#625d54" }}>Effective date: March 12, 2026</p>
         <p>
           This Privacy Policy explains how ARR Calculator (&quot;we&quot;, &quot;our&quot;, or &quot;us&quot;) handles information when
           you use the Service.
