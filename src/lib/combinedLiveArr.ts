@@ -41,7 +41,15 @@ export type CombinedLiveArrPayload = {
   projectedArrEomFlatAdjusted: number;
   projectedArrEomFlatFlat: number;
   liveArr: number;
+  // Legacy = HubSpot contracts not marked Cloud (blank counts as Legacy). They are being sunset
+  // on 2026-12-31, so they're counted in total ARR but kept apart from the Cloud figures above.
+  legacyArr: number;
+  legacyByDeploymentType: Array<{ deploymentType: string; arr: number; dealCount: number }>;
+  legacyDeals: Array<{ dealId: string; dealName: string; accountName: string; deploymentType: string; arr: number }>;
+  totalContractedArr: number;
 };
+
+export const COMBINED_LIVE_ARR_CACHE_KEY = "api:combined-live-arr:v2";
 
 function round2(v: number) {
   return Math.round((Number(v) || 0) * 100) / 100;
@@ -112,6 +120,48 @@ function computeHubspotCurrentArr(report: ReportResponse) {
   }
 
   return round2(Array.from(totalsByAccount.values()).reduce((sum, value) => sum + value, 0));
+}
+
+function legacyDeploymentLabel(value: string) {
+  return String(value || "").trim() || "Unlabeled";
+}
+
+function computeHubspotLegacyArr(report: ReportResponse) {
+  const periodKey = String(report.periods?.[0]?.key || "");
+  const deals = new Map<string, CombinedLiveArrPayload["legacyDeals"][number]>();
+  if (periodKey) {
+    for (const row of report.rows || []) {
+      if (isCloudDeploymentType(String(row.deploymentType || ""))) continue;
+      const value = Number(row.valuesByPeriod?.[periodKey] || 0);
+      if (Math.abs(value) < 1e-9) continue;
+      const dealId = String(row.dealId || "");
+      const existing = deals.get(dealId);
+      if (existing) {
+        existing.arr = round2(existing.arr + value);
+        continue;
+      }
+      deals.set(dealId, {
+        dealId,
+        dealName: String(row.dealName || ""),
+        accountName: String(row.accountName || ""),
+        deploymentType: legacyDeploymentLabel(String(row.deploymentType || "")),
+        arr: round2(value),
+      });
+    }
+  }
+  const legacyDeals = Array.from(deals.values()).sort((a, b) => b.arr - a.arr);
+  const byType = new Map<string, { deploymentType: string; arr: number; dealCount: number }>();
+  for (const deal of legacyDeals) {
+    const entry = byType.get(deal.deploymentType) || { deploymentType: deal.deploymentType, arr: 0, dealCount: 0 };
+    entry.arr = round2(entry.arr + deal.arr);
+    entry.dealCount += 1;
+    byType.set(deal.deploymentType, entry);
+  }
+  return {
+    legacyArr: round2(legacyDeals.reduce((sum, deal) => sum + deal.arr, 0)),
+    legacyByDeploymentType: Array.from(byType.values()).sort((a, b) => b.arr - a.arr),
+    legacyDeals,
+  };
 }
 
 function computeStripeCurrentArr(stripe: StripeBillingOverviewResult) {
@@ -235,6 +285,7 @@ export async function buildCombinedLiveArrPayload(): Promise<CombinedLiveArrPayl
   const hubspotCurrentArr = computeHubspotCurrentArr(hubspotTodayReport);
   const stripeCurrentArr = computeStripeCurrentArr(stripeReport);
   const currentMonthArr = round2(hubspotCurrentArr + stripeCurrentArr);
+  const legacy = computeHubspotLegacyArr(hubspotTodayReport);
 
   const monthDurationMs = Math.max(1, nextMonthStartUtc.getTime() - monthStartUtc.getTime());
   const aiSpendSnapshotTs =
@@ -309,5 +360,9 @@ export async function buildCombinedLiveArrPayload(): Promise<CombinedLiveArrPayl
     projectedArrEomFlatAdjusted,
     projectedArrEomFlatFlat,
     liveArr,
+    legacyArr: legacy.legacyArr,
+    legacyByDeploymentType: legacy.legacyByDeploymentType,
+    legacyDeals: legacy.legacyDeals,
+    totalContractedArr: round2(currentMonthArr + legacy.legacyArr),
   };
 }
