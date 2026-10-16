@@ -187,7 +187,9 @@ SELECT
   FORMAT_DATE('%Y-%m', period_date) AS month_key,
   SUM(IF(source = 'hubspot_account', arr_end, 0)) AS hubspot_arr,
   SUM(IF(source = 'hubspot_account', 0, arr_end)) AS stripe_arr,
-  COUNTIF(arr_end > 0) AS paying_customers
+  COUNTIF(arr_end > 0) AS paying_customers,
+  COUNTIF(arr_end > 0 AND source = 'hubspot_account') AS hubspot_paying,
+  COUNTIF(arr_end > 0 AND source != 'hubspot_account') AS stripe_paying
 FROM ${viewRef(VIEW_FACT_CUSTOMER_ARR_CURRENT)}
 WHERE grain = 'monthly'
   AND period_date BETWEEN DATE(@start_date) AND DATE(@end_date)
@@ -205,5 +207,44 @@ ORDER BY month_key
     hubspotArr: toNum(row.hubspot_arr),
     stripeArr: toNum(row.stripe_arr),
     payingCustomers: Math.floor(toNum(row.paying_customers)),
+    hubspotPaying: Math.floor(toNum(row.hubspot_paying)),
+    stripePaying: Math.floor(toNum(row.stripe_paying)),
+  }));
+}
+
+// Net and gross revenue retention between two month-ends: customers paying at the start month,
+// and what those same customers pay at the end month. NRR = end / start; GRR caps each customer
+// at their starting ARR, so it counts only churn and contraction.
+export async function queryPrecomputedRetentionBySource(params: { startMonth: string; endMonth: string }) {
+  const rows = await runBigQuerySqlRows(
+    `
+WITH f AS (
+  SELECT FORMAT_DATE('%Y-%m', period_date) AS month_key, customer_key, source, arr_end
+  FROM ${viewRef(VIEW_FACT_CUSTOMER_ARR_CURRENT)}
+  WHERE grain = 'monthly'
+)
+SELECT
+  b.source,
+  COUNT(*) AS customers,
+  SUM(b.arr_end) AS start_arr,
+  SUM(IFNULL(e.arr_end, 0)) AS end_arr,
+  SUM(LEAST(IFNULL(e.arr_end, 0), b.arr_end)) AS retained_arr
+FROM f b
+LEFT JOIN f e ON e.customer_key = b.customer_key AND e.month_key = @end_month
+WHERE b.month_key = @start_month AND b.arr_end > 0
+GROUP BY b.source
+`,
+    [
+      { name: "start_month", type: "STRING", value: params.startMonth },
+      { name: "end_month", type: "STRING", value: params.endMonth },
+    ],
+    { profile: PROFILE },
+  );
+  return rows.map((row) => ({
+    source: String(row.source || "") === "hubspot_account" ? "hubspot_account" : "stripe_only_customer",
+    customers: Math.floor(toNum(row.customers)),
+    startArr: toNum(row.start_arr),
+    endArr: toNum(row.end_arr),
+    retainedArr: toNum(row.retained_arr),
   }));
 }

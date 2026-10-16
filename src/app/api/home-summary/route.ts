@@ -14,7 +14,9 @@ async function handle(refresh: boolean) {
     const stored = await readStoredHomeSummary();
     if (!stored) return NextResponse.json(await rebuildHomeSummary());
 
-    if (homeSummaryAgeHours(stored) > REFRESH_AFTER_HOURS) {
+    // A copy saved before newer fields existed is shown as-is and rebuilt in the background.
+    const missingNewFields = !("retention" in stored);
+    if (missingNewFields || homeSummaryAgeHours(stored) > REFRESH_AFTER_HOURS) {
       after(() => rebuildHomeSummary().then(() => undefined, () => undefined));
     }
     return NextResponse.json(stored);

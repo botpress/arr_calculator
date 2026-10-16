@@ -259,3 +259,8 @@
 @media (prefers-reduced-motion: reduce) {
   .home-chart__stack, .home-tooltip { animation: none; transition: none; }
 }
+
+.home-tile__delta { margin-left: 8px; font-size: 0.85rem; font-weight: 500; }
+
+.home-tooltip__section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--home-line); }
+.home-tooltip__subtitle { margin: 0 0 2px; color: var(--home-ink-3); font-size: 0.75rem; }

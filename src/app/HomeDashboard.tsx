@@ -30,6 +30,14 @@ function monthLabel(monthKey: string, withYear = false) {
   }).format(new Date(Date.UTC(year, month - 1, 15)));
 }
 
+function formatPct(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function formatCount(value: number) {
+  return value.toLocaleString("en-US");
+}
+
 function formatAsOf(iso: string) {
   if (!iso) return "";
   const at = new Date(iso);
@@ -184,6 +192,61 @@ export default function HomeDashboard() {
         </div>
       </section>
 
+      {(data.retention || data.payingCustomers) && (
+        <section className="home-tiles">
+          {data.retention && (
+            <div
+              className="home-tile"
+              title="Net revenue retention: what customers paying 12 months ago pay now, including expansion, divided by what they paid then. Cloud only."
+            >
+              <p className="home-label">NRR (12 months)</p>
+              <p className="home-tile__value">{formatPct(data.retention.combined.nrrPct)}</p>
+              <p className="home-muted">
+                Sales-led {formatPct(data.retention.salesLed.nrrPct)} · Self-serve {formatPct(data.retention.selfServe.nrrPct)}
+              </p>
+              <p className="home-muted">
+                {monthLabel(data.retention.startMonth, true)} → {monthLabel(data.retention.endMonth, true)}
+              </p>
+            </div>
+          )}
+          {data.retention && (
+            <div
+              className="home-tile"
+              title="Gross revenue retention: like NRR, but each customer counts at most what they paid 12 months ago, so only churn and contraction lower it. Cloud only."
+            >
+              <p className="home-label">GRR (12 months)</p>
+              <p className="home-tile__value">{formatPct(data.retention.combined.grrPct)}</p>
+              <p className="home-muted">
+                Sales-led {formatPct(data.retention.salesLed.grrPct)} · Self-serve {formatPct(data.retention.selfServe.grrPct)}
+              </p>
+              <p className="home-muted">
+                {monthLabel(data.retention.startMonth, true)} → {monthLabel(data.retention.endMonth, true)}
+              </p>
+            </div>
+          )}
+          {data.payingCustomers && (
+            <div className="home-tile" title="Cloud customers with ARR above $0 at month-end, plus legacy contracts still running today.">
+              <p className="home-label">Paying customers ({monthLabel(data.payingCustomers.monthKey)} month-end)</p>
+              <p className="home-tile__value">
+                {formatCount(data.payingCustomers.total)}
+                {data.payingCustomers.previousTotal !== null && (
+                  <span
+                    className={`home-tile__delta ${data.payingCustomers.total >= data.payingCustomers.previousTotal ? "home-good" : "home-bad"}`}
+                  >
+                    {data.payingCustomers.total >= data.payingCustomers.previousTotal ? "+" : "−"}
+                    {formatCount(Math.abs(data.payingCustomers.total - data.payingCustomers.previousTotal))}
+                  </span>
+                )}
+              </p>
+              <p className="home-muted">
+                Self-serve {formatCount(data.payingCustomers.selfServe)} · Sales-led {formatCount(data.payingCustomers.salesLed)}
+              </p>
+              <p className="home-muted">Plus {formatCount(data.payingCustomers.legacy)} legacy contracts</p>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="home-columns">
         <section className="home-card">
           <p className="home-label">ARR by month-end</p>
@@ -240,6 +303,15 @@ export default function HomeDashboard() {
                           </span>
                         </div>
                       ))}
+                      {"movement" in bar && bar.movement && (
+                        <div className="home-tooltip__section">
+                          <p className="home-tooltip__subtitle">Cloud ARR movement in the month</p>
+                          <div className="home-tooltip__row"><span>New</span><span className="home-num">+{formatMoney(bar.movement.newArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Expansion</span><span className="home-num">+{formatMoney(bar.movement.expansionArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Contraction</span><span className="home-num">−{formatMoney(bar.movement.contractionArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Churn</span><span className="home-num">−{formatMoney(bar.movement.churnArr)}</span></div>
+                        </div>
+                      )}
                       {change !== null && previous && (
                         <p className={`home-tooltip__change ${change >= 0 ? "home-good" : "home-bad"}`}>
                           {formatSignedMoney(change)} vs {previous.isLive ? "today" : monthLabel(previous.monthKey)}
@@ -334,3 +406,4 @@ export default function HomeDashboard() {
     </main>
   );
 }
+
