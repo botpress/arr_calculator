@@ -1,7 +1,10 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+export const DATA_TOOLS_TOGGLE_EVENT = "arr:data-tools-toggle";
+export const DATA_TOOLS_BUSY_EVENT = "arr:data-tools-busy";
 
 function shouldHide(pathname: string) {
   return (
@@ -49,6 +52,39 @@ export default function HardRefreshButton() {
   const [arrFteRefreshLoading, setArrFteRefreshLoading] = useState(false);
   const [arrFteStartDate, setArrFteStartDate] = useState("2023-01-01");
   const [arrFteEndDate, setArrFteEndDate] = useState(toIsoDateUtc(new Date()));
+  // These tools live in a panel opened from the "Data tools" button in the nav (AppNavigation),
+  // which talks to this component through window events so running jobs keep their state.
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const busy = loading || syncLoading || backfillLoading || remainingBackfillLoading || arrFteRefreshLoading;
+
+  useEffect(() => {
+    const toggle = () => setPanelOpen((open) => !open);
+    window.addEventListener(DATA_TOOLS_TOGGLE_EVENT, toggle);
+    return () => window.removeEventListener(DATA_TOOLS_TOGGLE_EVENT, toggle);
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(DATA_TOOLS_BUSY_EVENT, { detail: { busy } }));
+  }, [busy]);
+
+  useEffect(() => {
+    if (!panelOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Element | null;
+      if (!target || panelRef.current?.contains(target) || target.closest("[data-data-tools-toggle]")) return;
+      setPanelOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setPanelOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [panelOpen]);
 
   useEffect(() => {
     let active = true;
@@ -105,7 +141,7 @@ export default function HardRefreshButton() {
     };
   }, []);
 
-  if (shouldHide(pathname) || !sessionLoaded || isAssignedAreaOnly) return null;
+  if (shouldHide(pathname) || !sessionLoaded || isAssignedAreaOnly || !panelOpen) return null;
 
   async function hardRefresh() {
     setLoading(true);
@@ -771,14 +807,25 @@ export default function HardRefreshButton() {
 
   return (
     <div
+      ref={panelRef}
+      role="dialog"
+      aria-label="Data tools"
       style={{
         position: "fixed",
         right: 12,
-        bottom: 12,
-        zIndex: 60,
+        top: 64,
+        zIndex: 120,
         display: "grid",
-        gap: 6,
-        justifyItems: "end",
+        gap: 8,
+        width: 340,
+        maxWidth: "calc(100vw - 24px)",
+        maxHeight: "calc(100vh - 80px)",
+        overflowY: "auto",
+        padding: 12,
+        background: "#f8f7f4",
+        border: "1px solid #e0dbd2",
+        borderRadius: 12,
+        boxShadow: "0 8px 24px rgba(5,4,4,0.10)",
       }}
     >
       {message ? (
@@ -819,7 +866,7 @@ export default function HardRefreshButton() {
             color: "#050404",
             borderRadius: 10,
             padding: "10px 12px",
-            width: 430,
+            width: "100%",
             maxWidth: "calc(100vw - 24px)",
             boxShadow: "0 4px 16px rgba(5,4,4,0.08)",
           }}
@@ -944,7 +991,7 @@ export default function HardRefreshButton() {
           </div>
         </div>
       ) : null}
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "grid", gap: 8 }}>
         {isAdmin ? (
           <>
             <button

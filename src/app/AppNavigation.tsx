@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { MouseEvent } from "react";
 import BotpressLogo from "./BotpressLogo";
+import { DATA_TOOLS_BUSY_EVENT, DATA_TOOLS_TOGGLE_EVENT } from "./HardRefreshButton";
 
 type NavigationItem = {
   href: string;
@@ -41,6 +42,13 @@ export default function AppNavigation() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const groupsRef = useRef<HTMLDivElement>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dataToolsBusy, setDataToolsBusy] = useState(false);
+
+  useEffect(() => {
+    const onBusy = (event: Event) => setDataToolsBusy(Boolean((event as CustomEvent<{ busy: boolean }>).detail?.busy));
+    window.addEventListener(DATA_TOOLS_BUSY_EVENT, onBusy);
+    return () => window.removeEventListener(DATA_TOOLS_BUSY_EVENT, onBusy);
+  }, []);
 
   // With a mouse, menus open on hover and close shortly after the pointer leaves (the delay
   // covers the small gap between the button and the menu). Touch and keyboard still use click.
@@ -239,6 +247,22 @@ export default function AppNavigation() {
             );
           })}
         </div>
+        {homeHref === "/" && (
+          <button
+            type="button"
+            className="app-nav__summary app-nav__tools"
+            data-data-tools-toggle
+            onClick={() => window.dispatchEvent(new Event(DATA_TOOLS_TOGGLE_EVENT))}
+            title={dataToolsBusy ? "A data job is running" : "Sync, backfill and refresh tools"}
+          >
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Data tools
+            {dataToolsBusy && <span className="app-nav__busy-dot" aria-label="running" />}
+          </button>
+        )}
       </div>
     </nav>
   );
