@@ -1,5 +1,9 @@
 import { buildCombinedLiveArrPayload, COMBINED_LIVE_ARR_CACHE_KEY, type CombinedLiveArrPayload } from "@/lib/combinedLiveArr";
-import { queryPrecomputedMonthlyArrBySource } from "@/lib/precomputedFactsRead";
+import {
+  queryPrecomputedMonthlyArrBySource,
+  queryPrecomputedRetentionBySource,
+  queryPrecomputedTofuMonthlyCurrent,
+} from "@/lib/precomputedFactsRead";
 import { generateReport } from "@/lib/report";
 import { resolveEnterprisePrepaidAiSpendExclusions } from "@/lib/aiSpendEnterprisePrepaidExclusions";
 import { queryStripeAiSpendFromBigQuery } from "@/lib/stripeBigquery";
@@ -15,6 +19,8 @@ export type HomeTrendPoint = {
   legacyArr: number;
   totalArr: number;
 };
+
+export type RetentionFigures = { nrrPct: number; grrPct: number; customers: number; startArr: number };
 
 export type HomeSummaryPayload = {
   generatedAtUtc: string;
@@ -36,6 +42,31 @@ export type HomeSummaryPayload = {
     // Billed AI spend per completed month, same window and offsets as the tile.
     monthly: Array<{ monthKey: string; billed: number }>;
   };
+  // Cloud only (Legacy is left out of retention and movement by design). All from completed months.
+  retention: {
+    startMonth: string;
+    endMonth: string;
+    combined: RetentionFigures;
+    salesLed: RetentionFigures;
+    selfServe: RetentionFigures;
+  } | null;
+  movement: {
+    monthKey: string;
+    beginningArr: number;
+    newArr: number;
+    expansionArr: number;
+    contractionArr: number;
+    churnArr: number;
+    endingArr: number;
+  } | null;
+  payingCustomers: {
+    monthKey: string;
+    selfServe: number;
+    salesLed: number;
+    legacy: number;
+    total: number;
+    previousTotal: number | null;
+  } | null;
   // Change between the last two completed month-ends (same method on both sides). Mid-month
   // figures aren't compared because Stripe period-end cancellations land on the 1st of each month.
   lastMonthChange: { monthKey: string; previousMonthKey: string; change: number } | null;
@@ -100,6 +131,24 @@ async function aiSpendByMonth(startDate: string, endDate: string, asOfDate: stri
   }));
 }
 
+function retentionFigures(rows: Array<{ customers: number; startArr: number; endArr: number; retainedArr: number }>): RetentionFigures {
+  const startArr = rows.reduce((sum, r) => sum + r.startArr, 0);
+  const endArr = rows.reduce((sum, r) => sum + r.endArr, 0);
+  const retainedArr = rows.reduce((sum, r) => sum + r.retainedArr, 0);
+  return {
+    nrrPct: startArr > 0 ? Math.round((endArr / startArr) * 1000) / 10 : 0,
+    grrPct: startArr > 0 ? Math.round((retainedArr / startArr) * 1000) / 10 : 0,
+    customers: rows.reduce((sum, r) => sum + r.customers, 0),
+    startArr: round2(startArr),
+  };
+}
+
+function shiftMonthKey(monthKey: string, months: number) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1 + months, 1));
+  return d.toISOString().slice(0, 7);
+}
+
 export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
   const now = new Date();
   const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -108,7 +157,9 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
   const trendStartDate = isoDate(trendStart);
   const trendEndDate = isoDate(lastMonthEnd);
 
-  const [live, monthly, legacyMonthly, lastSync, aiMonthly] = await Promise.all([
+  const lastMonthKey = trendEndDate.slice(0, 7);
+  const retentionStartMonth = shiftMonthKey(lastMonthKey, -12);
+  const [live, monthly, legacyMonthly, lastSync, aiMonthly, retentionRows, tofuRows] = await Promise.all([
     getOrSetCache(
       COMBINED_LIVE_ARR_CACHE_KEY,
       readTtlMs("API_COMBINED_LIVE_ARR_CACHE_TTL_MS", 30_000),
@@ -118,6 +169,8 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
     legacyArrByMonth(trendStartDate, trendEndDate),
     readServerCacheSyncStatus().catch(() => null),
     aiSpendByMonth(trendStartDate, trendEndDate, isoDate(now)),
+    queryPrecomputedRetentionBySource({ startMonth: retentionStartMonth, endMonth: lastMonthKey }).catch(() => []),
+    queryPrecomputedTofuMonthlyCurrent({ startDate: trendEndDate, endDate: trendEndDate }).catch(() => []),
   ]);
 
   // Completed months only; the current month is shown live instead.
@@ -133,6 +186,10 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
   });
   const last = trend[trend.length - 1];
   const previous = trend[trend.length - 2];
+
+  const overallMovement = tofuRows.find((r) => r.groupType === "overall" && r.monthKey === lastMonthKey);
+  const lastMonthRow = monthly.find((m) => m.monthKey === lastMonthKey);
+  const previousMonthRow = monthly.find((m) => m.monthKey === shiftMonthKey(lastMonthKey, -1));
 
   const selfServeArr = round2(live.stripeCurrentArr);
   const salesLedCloudArr = round2(live.hubspotCurrentArr);
@@ -156,6 +213,36 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
       annualized: round2(live.aiSpendLastMonthAmount * 12),
       monthly: aiMonthly,
     },
+    retention: retentionRows.length
+      ? {
+          startMonth: retentionStartMonth,
+          endMonth: lastMonthKey,
+          combined: retentionFigures(retentionRows),
+          salesLed: retentionFigures(retentionRows.filter((r) => r.source === "hubspot_account")),
+          selfServe: retentionFigures(retentionRows.filter((r) => r.source !== "hubspot_account")),
+        }
+      : null,
+    movement: overallMovement
+      ? {
+          monthKey: lastMonthKey,
+          beginningArr: round2(overallMovement.beginningArr),
+          newArr: round2(overallMovement.newArr),
+          expansionArr: round2(overallMovement.expansionArr),
+          contractionArr: round2(overallMovement.contractionArr),
+          churnArr: round2(overallMovement.churnArr),
+          endingArr: round2(overallMovement.endingArr),
+        }
+      : null,
+    payingCustomers: lastMonthRow
+      ? {
+          monthKey: lastMonthKey,
+          selfServe: lastMonthRow.stripePaying,
+          salesLed: lastMonthRow.hubspotPaying,
+          legacy: live.legacyDeals.length,
+          total: lastMonthRow.payingCustomers,
+          previousTotal: previousMonthRow ? previousMonthRow.payingCustomers : null,
+        }
+      : null,
     lastMonthChange: last && previous
       ? { monthKey: last.monthKey, previousMonthKey: previous.monthKey, change: round2(last.totalArr - previous.totalArr) }
       : null,

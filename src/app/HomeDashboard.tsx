@@ -30,6 +30,14 @@ function monthLabel(monthKey: string, withYear = false) {
   }).format(new Date(Date.UTC(year, month - 1, 15)));
 }
 
+function formatPct(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function formatCount(value: number) {
+  return value.toLocaleString("en-US");
+}
+
 function formatAsOf(iso: string) {
   if (!iso) return "";
   const at = new Date(iso);
@@ -184,6 +192,63 @@ export default function HomeDashboard() {
         </div>
       </section>
 
+      {(data.retention || data.payingCustomers) && (
+        <section className="home-tiles">
+          {data.retention && (
+            <div
+              className="home-tile"
+              title="Net revenue retention: what customers paying 12 months ago pay now, including expansion, divided by what they paid then. Cloud only."
+            >
+              <p className="home-label">NRR (12 months)</p>
+              <p className="home-tile__value">{formatPct(data.retention.combined.nrrPct)}</p>
+              <p className="home-muted">
+                Sales-led {formatPct(data.retention.salesLed.nrrPct)} · Self-serve {formatPct(data.retention.selfServe.nrrPct)}
+              </p>
+              <p className="home-muted">
+                {monthLabel(data.retention.startMonth, true)} → {monthLabel(data.retention.endMonth, true)}
+              </p>
+            </div>
+          )}
+          {data.retention && (
+            <div
+              className="home-tile"
+              title="Gross revenue retention: like NRR, but each customer counts at most what they paid 12 months ago, so only churn and contraction lower it. Cloud only."
+            >
+              <p className="home-label">GRR (12 months)</p>
+              <p className="home-tile__value">{formatPct(data.retention.combined.grrPct)}</p>
+              <p className="home-muted">
+                Sales-led {formatPct(data.retention.salesLed.grrPct)} · Self-serve {formatPct(data.retention.selfServe.grrPct)}
+              </p>
+              <p className="home-muted">
+                {monthLabel(data.retention.startMonth, true)} → {monthLabel(data.retention.endMonth, true)}
+              </p>
+            </div>
+          )}
+          {data.payingCustomers && (
+            <div className="home-tile" title="Cloud customers with ARR above $0 at month-end, plus legacy contracts still running today.">
+              <p className="home-label">Paying customers ({monthLabel(data.payingCustomers.monthKey)} month-end)</p>
+              <p className="home-tile__value">
+                {formatCount(data.payingCustomers.total)}
+                {data.payingCustomers.previousTotal !== null && (
+                  <span
+                    className={`home-tile__delta ${data.payingCustomers.total >= data.payingCustomers.previousTotal ? "home-good" : "home-bad"}`}
+                  >
+                    {data.payingCustomers.total >= data.payingCustomers.previousTotal ? "+" : "−"}
+                    {formatCount(Math.abs(data.payingCustomers.total - data.payingCustomers.previousTotal))}
+                  </span>
+                )}
+              </p>
+              <p className="home-muted">
+                Self-serve {formatCount(data.payingCustomers.selfServe)} · Sales-led {formatCount(data.payingCustomers.salesLed)}
+              </p>
+              <p className="home-muted">Plus {formatCount(data.payingCustomers.legacy)} legacy contracts</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {data.movement && <MovementWaterfall movement={data.movement} />}
+
       <div className="home-columns">
         <section className="home-card">
           <p className="home-label">ARR by month-end</p>
@@ -332,5 +397,65 @@ export default function HomeDashboard() {
         </section>
       </div>
     </main>
+  );
+}
+
+function MovementWaterfall({ movement }: { movement: NonNullable<HomeSummaryPayload["movement"]> }) {
+  const steps = [
+    { label: "Start", value: movement.beginningArr, kind: "total" as const },
+    { label: "New", value: movement.newArr, kind: "up" as const },
+    { label: "Expansion", value: movement.expansionArr, kind: "up" as const },
+    { label: "Contraction", value: -Math.abs(movement.contractionArr), kind: "down" as const },
+    { label: "Churn", value: -Math.abs(movement.churnArr), kind: "down" as const },
+    { label: "End", value: movement.endingArr, kind: "total" as const },
+  ];
+  // Running level after each step; deltas float between the previous and next level.
+  let level = 0;
+  const bars = steps.map((step) => {
+    if (step.kind === "total") {
+      level = step.value;
+      return { ...step, low: 0, high: step.value };
+    }
+    const from = level;
+    level = level + step.value;
+    return { ...step, low: Math.min(from, level), high: Math.max(from, level) };
+  });
+  // The axis starts near the lowest level so the monthly changes are visible next to the totals.
+  const levels = bars.flatMap((b) => (b.kind === "total" ? [b.high] : [b.low, b.high]));
+  const min = Math.min(...levels);
+  const max = Math.max(...levels);
+  const pad = Math.max((max - min) * 0.6, max * 0.01);
+  const floor = Math.max(0, min - pad);
+  const top = max + pad * 0.3;
+  const pct = (v: number) => ((v - floor) / (top - floor)) * 100;
+  const net = movement.endingArr - movement.beginningArr;
+
+  return (
+    <section className="home-card home-waterfall">
+      <p className="home-label">
+        Cloud ARR movement in {monthLabel(movement.monthKey, true)}{" "}
+        <span className={net >= 0 ? "home-good" : "home-bad"}>({formatSignedMoney(net)} net)</span>
+      </p>
+      <div className="home-waterfall__plot" role="img" aria-label={`ARR movement: ${steps.map((s) => `${s.label} ${formatMoney(s.value)}`).join(", ")}`}>
+        {bars.map((bar) => (
+          <div className="home-waterfall__col" key={bar.label}>
+            <div
+              className={`home-waterfall__bar home-waterfall__bar--${bar.kind}`}
+              style={{ bottom: `${bar.kind === "total" ? 0 : pct(bar.low)}%`, height: `${Math.max(0.8, pct(bar.high) - (bar.kind === "total" ? 0 : pct(bar.low)))}%` }}
+            >
+              <span className="home-waterfall__value">
+                {bar.kind === "total" ? formatMoney(bar.value) : formatSignedMoney(bar.value)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="home-waterfall__labels">
+        {bars.map((bar) => (
+          <span key={bar.label}>{bar.label}</span>
+        ))}
+      </div>
+      <p className="home-muted">Axis starts near the lowest level so changes are visible. Legacy contracts aren&apos;t included.</p>
+    </section>
   );
 }
