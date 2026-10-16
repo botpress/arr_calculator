@@ -200,3 +200,62 @@
   .home-columns { grid-template-columns: 1fr; }
   .home-chart__total { display: none; }
 }
+
+.home-legend--chart { margin: 6px 0 0; font-size: 0.8rem; }
+
+.home-chart__col { position: relative; outline: none; cursor: default; }
+.home-chart__stack {
+  transform-origin: bottom;
+  animation: home-bar-grow 520ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  transition: transform 160ms ease, opacity 160ms ease, filter 160ms ease;
+}
+@keyframes home-bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+.home-chart--hovering .home-chart__col .home-chart__stack { opacity: 0.4; }
+.home-chart--hovering .home-chart__col--active .home-chart__stack {
+  opacity: 1;
+  transform: translateY(-4px);
+  filter: brightness(1.06);
+}
+.home-chart__col--active .home-chart__total,
+.home-chart__col--active .home-chart__label { color: var(--home-ink); font-weight: 600; }
+
+.home-tooltip {
+  position: absolute;
+  top: 20px;
+  z-index: 5;
+  min-width: 250px;
+  white-space: nowrap;
+  padding: 10px 12px;
+  background: var(--home-surface);
+  border: 1px solid var(--home-line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(5, 4, 4, 0.12);
+  font-size: 0.8rem;
+  pointer-events: none;
+  animation: home-tooltip-in 120ms ease-out both;
+}
+.home-tooltip--after { left: calc(100% + 8px); }
+.home-tooltip--before { right: calc(100% + 8px); }
+@keyframes home-tooltip-in {
+  from { opacity: 0; margin-bottom: -4px; }
+  to { opacity: 1; margin-bottom: 0; }
+}
+.home-tooltip__title { margin: 0; color: var(--home-ink-2); }
+.home-tooltip__total { margin: 2px 0 8px; font-size: 1.05rem; font-weight: 600; color: var(--home-ink); }
+.home-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 3px 0;
+  color: var(--home-ink);
+}
+.home-tooltip__share { margin-left: 8px; color: var(--home-ink-3); }
+.home-tooltip__change { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--home-line); }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-chart__stack, .home-tooltip { animation: none; transition: none; }
+}

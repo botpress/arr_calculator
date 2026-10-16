@@ -55,6 +55,8 @@ export default function HomeDashboard() {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [showLegacyDeals, setShowLegacyDeals] = useState(false);
+  const [hoveredBar, setHoveredBar] = useState<number | null>(null);
+  const [hoveredAi, setHoveredAi] = useState<number | null>(null);
 
   const load = useCallback(async (refresh: boolean) => {
     if (refresh) setRefreshing(true);
@@ -185,34 +187,112 @@ export default function HomeDashboard() {
       <div className="home-columns">
         <section className="home-card">
           <p className="home-label">ARR by month-end</p>
-          <div className="home-chart">
-            {trendBars.map((bar) => (
-              <div
-                key={bar.monthKey}
-                className={`home-chart__col${bar.isLive ? " home-chart__col--live" : ""}`}
-                title={`${bar.isLive ? "Today" : monthLabel(bar.monthKey, true)}: ${formatMoney(bar.totalArr)} (self-serve ${formatMoney(bar.selfServeArr)}, sales-led Cloud ${formatMoney(bar.salesLedCloudArr)}, legacy ${formatMoney(bar.legacyArr)})`}
-              >
-                <span className="home-chart__total">{formatMoney(bar.totalArr)}</span>
-                <div className="home-chart__stack" style={{ height: `${(bar.totalArr / trendMax) * 100}%` }}>
-                  <div className="home-swatch--legacy" style={{ flexGrow: bar.legacyArr }} />
-                  <div className="home-swatch--salesled" style={{ flexGrow: bar.salesLedCloudArr }} />
-                  <div className="home-swatch--selfserve" style={{ flexGrow: bar.selfServeArr }} />
-                </div>
-                <span className="home-chart__label">{bar.label}</span>
-              </div>
+          <div className="home-legend home-legend--chart">
+            {SERIES.map((s) => (
+              <span key={s.key}>
+                <i className={`home-legend__swatch ${s.className}`} aria-hidden="true" />
+                {s.label}
+              </span>
             ))}
           </div>
-          <p className="home-label home-label--spaced">AI spend billed per month (not in ARR)</p>
-          <div className="home-chart home-chart--short">
-            {data.aiSpend.monthly.map((m) => (
-              <div key={m.monthKey} className="home-chart__col" title={`${monthLabel(m.monthKey, true)}: ${formatMoney(m.billed)} billed`}>
-                <span className="home-chart__total">{formatMoney(m.billed)}</span>
-                <div className="home-chart__stack" style={{ height: `${(m.billed / aiMax) * 100}%` }}>
-                  <div className="home-swatch--ai" style={{ flexGrow: 1 }} />
+          <div className={`home-chart${hoveredBar !== null ? " home-chart--hovering" : ""}`} onMouseLeave={() => setHoveredBar(null)}>
+            {trendBars.map((bar, index) => {
+              const previous = index > 0 ? trendBars[index - 1] : null;
+              const change = previous ? bar.totalArr - previous.totalArr : null;
+              const align = index < trendBars.length / 2 ? "after" : "before";
+              return (
+                <div
+                  key={bar.monthKey}
+                  className={`home-chart__col${bar.isLive ? " home-chart__col--live" : ""}${hoveredBar === index ? " home-chart__col--active" : ""}`}
+                  onMouseEnter={() => setHoveredBar(index)}
+                  onFocus={() => setHoveredBar(index)}
+                  onBlur={() => setHoveredBar(null)}
+                  tabIndex={0}
+                  aria-label={`${bar.isLive ? "Today" : monthLabel(bar.monthKey, true)}: ${formatMoney(bar.totalArr)}`}
+                >
+                  <span className="home-chart__total">{formatMoney(bar.totalArr)}</span>
+                  <div
+                    className="home-chart__stack"
+                    style={{ height: `${(bar.totalArr / trendMax) * 100}%`, animationDelay: `${index * 35}ms` }}
+                  >
+                    <div className="home-swatch--legacy" style={{ flexGrow: bar.legacyArr }} />
+                    <div className="home-swatch--salesled" style={{ flexGrow: bar.salesLedCloudArr }} />
+                    <div className="home-swatch--selfserve" style={{ flexGrow: bar.selfServeArr }} />
+                  </div>
+                  <span className="home-chart__label">{bar.label}</span>
+                  {hoveredBar === index && (
+                    <div className={`home-tooltip home-tooltip--${align}`} role="tooltip">
+                      <p className="home-tooltip__title">
+                        {bar.isLive ? "Today (mid-month)" : `${monthLabel(bar.monthKey, true)} month-end`}
+                      </p>
+                      <p className="home-tooltip__total">{formatMoney(bar.totalArr)}</p>
+                      {SERIES.map((s) => (
+                        <div className="home-tooltip__row" key={s.key}>
+                          <span>
+                            <i className={`home-legend__swatch ${s.className}`} aria-hidden="true" />
+                            {s.label}
+                          </span>
+                          <span className="home-num">
+                            {formatMoney(bar[s.key])}
+                            <span className="home-tooltip__share">
+                              {bar.totalArr > 0 ? Math.round((bar[s.key] / bar.totalArr) * 100) : 0}%
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                      {change !== null && previous && (
+                        <p className={`home-tooltip__change ${change >= 0 ? "home-good" : "home-bad"}`}>
+                          {formatSignedMoney(change)} vs {previous.isLive ? "today" : monthLabel(previous.monthKey)}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <span className="home-chart__label">{monthLabel(m.monthKey)}</span>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+          <p className="home-label home-label--spaced">AI spend billed per month (not in ARR)</p>
+          <div className={`home-chart home-chart--short${hoveredAi !== null ? " home-chart--hovering" : ""}`} onMouseLeave={() => setHoveredAi(null)}>
+            {data.aiSpend.monthly.map((m, index, all) => {
+              const previous = index > 0 ? all[index - 1] : null;
+              const change = previous ? m.billed - previous.billed : null;
+              const align = index < all.length / 2 ? "after" : "before";
+              return (
+                <div
+                  key={m.monthKey}
+                  className={`home-chart__col${hoveredAi === index ? " home-chart__col--active" : ""}`}
+                  onMouseEnter={() => setHoveredAi(index)}
+                  onFocus={() => setHoveredAi(index)}
+                  onBlur={() => setHoveredAi(null)}
+                  tabIndex={0}
+                  aria-label={`${monthLabel(m.monthKey, true)}: ${formatMoney(m.billed)} billed`}
+                >
+                  <span className="home-chart__total">{formatMoney(m.billed)}</span>
+                  <div
+                    className="home-chart__stack"
+                    style={{ height: `${(m.billed / aiMax) * 100}%`, animationDelay: `${index * 35}ms` }}
+                  >
+                    <div className="home-swatch--ai" style={{ flexGrow: 1 }} />
+                  </div>
+                  <span className="home-chart__label">{monthLabel(m.monthKey)}</span>
+                  {hoveredAi === index && (
+                    <div className={`home-tooltip home-tooltip--${align}`} role="tooltip">
+                      <p className="home-tooltip__title">{monthLabel(m.monthKey, true)} AI spend</p>
+                      <p className="home-tooltip__total">{formatMoney(m.billed)} billed</p>
+                      <p className="home-tooltip__row">
+                        <span>Annualized</span>
+                        <span className="home-num">{formatMoney(m.billed * 12)}/yr</span>
+                      </p>
+                      {change !== null && previous && (
+                        <p className={`home-tooltip__change ${change >= 0 ? "home-good" : "home-bad"}`}>
+                          {formatSignedMoney(change)} vs {monthLabel(previous.monthKey)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
