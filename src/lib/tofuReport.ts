@@ -20,6 +20,10 @@ export type TofuRequest = {
   endDate: string;
   combineMode?: CombinedAllSubsCombineMode;
   groupBy?: TofuGroupBy;
+  // Compute from live source data, skipping saved monthly facts and the cached report. The facts
+  // rebuild uses this: its own new month-end rows stay hidden until the run finishes, so reading
+  // saved facts mid-run would pair a new month start with an old month end.
+  freshSource?: boolean;
 };
 
 export type TofuMonthRow = {
@@ -261,11 +265,13 @@ async function loadExpandedTofuSource(request: TofuRequest): Promise<{
     includeSalesAssist: groupBy === "segment",
   };
   const expandedCacheKey = `tofu:expanded-source:${stableStringify(expandedSourceRequest)}`;
-  const expanded = await getOrSetCache(
-    expandedCacheKey,
-    TOFU_EXPANDED_SOURCE_CACHE_TTL_MS,
-    () => generateCombinedAllSubsReport(expandedSourceRequest),
-  );
+  const expanded = request.freshSource
+    ? await generateCombinedAllSubsReport({ ...expandedSourceRequest, preferPrecomputedFacts: false })
+    : await getOrSetCache(
+        expandedCacheKey,
+        TOFU_EXPANDED_SOURCE_CACHE_TTL_MS,
+        () => generateCombinedAllSubsReport(expandedSourceRequest),
+      );
 
   const allPeriods = (expanded.periods || []).map((period) => ({
     key: String(period.key || ""),

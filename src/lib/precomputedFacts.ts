@@ -527,6 +527,7 @@ async function syncTofuMonthly(startDate: string, endDate: string, syncRunId: st
     endDate,
     combineMode: "grouped",
     groupBy: "month",
+    freshSource: true,
   });
   for (const row of monthReport.rows || []) {
     const d = monthKeyToDate(row.periodKey);
@@ -553,6 +554,7 @@ async function syncTofuMonthly(startDate: string, endDate: string, syncRunId: st
     endDate,
     combineMode: "grouped",
     groupBy: "segment",
+    freshSource: true,
   });
   for (const row of segmentReport.segmentRows || []) {
     const d = monthKeyToDate(row.periodKey);
@@ -579,6 +581,7 @@ async function syncTofuMonthly(startDate: string, endDate: string, syncRunId: st
     endDate,
     combineMode: "grouped",
     groupBy: "plan",
+    freshSource: true,
   });
   for (const row of planReport.planRows || []) {
     const d = monthKeyToDate(row.periodKey);
