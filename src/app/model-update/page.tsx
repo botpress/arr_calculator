@@ -1470,12 +1470,12 @@ export default function ModelUpdatePage() {
         </div>
 
         {error && (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fca5a5", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318", marginTop: "0.75rem", marginBottom: 0 }}>
             {error}
           </p>
         )}
         {readyMessage && (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#86efac", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#3d7a33", marginTop: "0.75rem", marginBottom: 0 }}>
             {readyMessage}
           </p>
         )}
@@ -1527,12 +1527,12 @@ export default function ModelUpdatePage() {
         </div>
 
         {transformError ? (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fca5a5", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318", marginTop: "0.75rem", marginBottom: 0 }}>
             {transformError}
           </p>
         ) : null}
         {transformSuccess ? (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#86efac", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#3d7a33", marginTop: "0.75rem", marginBottom: 0 }}>
             {transformSuccess}
           </p>
         ) : null}
@@ -1576,7 +1576,7 @@ export default function ModelUpdatePage() {
           </button>
         </div>
         {newHiresError ? (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fca5a5", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318", marginTop: "0.75rem", marginBottom: 0 }}>
             {newHiresError}
           </p>
         ) : null}
@@ -1730,7 +1730,7 @@ export default function ModelUpdatePage() {
         </div>
 
         {analyticsError && (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fca5a5", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318", marginTop: "0.75rem", marginBottom: 0 }}>
             {analyticsError}
           </p>
         )}
@@ -1847,7 +1847,7 @@ export default function ModelUpdatePage() {
         </div>
 
         {unmatchedDealsError ? (
-          <p className="stripe-ui__panel-subtitle" style={{ color: "#fca5a5", marginTop: "0.75rem", marginBottom: 0 }}>
+          <p className="stripe-ui__panel-subtitle" style={{ color: "#b42318", marginTop: "0.75rem", marginBottom: 0 }}>
             {unmatchedDealsError}
           </p>
         ) : null}

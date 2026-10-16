@@ -152,7 +152,7 @@ export default function AppNavigation() {
   }, [roles]);
 
   const homeHref = useMemo(() => {
-    if (roles.includes("admin") || roles.includes("viewer")) return "/combined-all-subs";
+    if (roles.includes("admin") || roles.includes("viewer")) return "/";
     if (roles.includes("sales")) return "/commissions";
     if (roles.includes("account_management")) return "/migration";
     if (roles.includes("gtm")) return "/gtm";
@@ -169,6 +169,15 @@ export default function AppNavigation() {
           <span>ARR Calculator</span>
         </Link>
         <div className="app-nav__groups" ref={groupsRef}>
+          {homeHref === "/" && (
+            <Link
+              aria-current={pathname === "/" ? "page" : undefined}
+              className={pathname === "/" ? "app-nav__summary app-nav__summary--active" : "app-nav__summary"}
+              href="/"
+            >
+              Dashboard
+            </Link>
+          )}
           {groups.map((group) => {
             const groupActive = group.items.some((item) => isActive(pathname, item.href));
             return (

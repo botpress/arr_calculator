@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import HomeDashboard from "./HomeDashboard";
 
 export default function HomePage() {
-  redirect("/combined-all-subs");
+  return <HomeDashboard />;
 }

@@ -91,7 +91,7 @@ function RoleChecklist({ defaultRoles = [], disabled = false }: { defaultRoles?:
   return (
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
       {ROLE_OPTIONS.map(({ role, label }) => (
-        <label key={role} style={{ display: "inline-flex", gap: 6, alignItems: "center", color: "#374151" }}>
+        <label key={role} style={{ display: "inline-flex", gap: 6, alignItems: "center", color: "#625d54" }}>
           <input
             type="checkbox"
             name="roles"
@@ -153,12 +153,12 @@ export default async function AccessControlPage(props: { searchParams: AccessCon
           Assign one or more roles. Viewer grants the standard dashboards, Sales grants Commissions, Account Management grants the Account Management and Migration dashboards, GTM grants the GTM scorecard, and Admin grants everything.
         </p>
         {updated ? (
-          <p style={{ color: "#166534", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 8, padding: "10px 12px" }}>
+          <p style={{ color: "#3d7a33", background: "#e6efdf", border: "1px solid #b9d1ae", borderRadius: 8, padding: "10px 12px" }}>
             Access control updated.
           </p>
         ) : null}
         {error ? (
-          <p style={{ color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px" }}>
+          <p style={{ color: "#b42318", background: "#f8e3df", border: "1px solid #e8b4aa", borderRadius: 8, padding: "10px 12px" }}>
             {error}
           </p>
         ) : null}

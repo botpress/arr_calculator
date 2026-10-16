@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildCombinedLiveArrPayload } from "@/lib/combinedLiveArr";
+import { buildCombinedLiveArrPayload, COMBINED_LIVE_ARR_CACHE_KEY } from "@/lib/combinedLiveArr";
 import { getOrSetCache, readTtlMs } from "@/lib/serverResponseCache";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ const CACHE_TTL_MS = readTtlMs("API_COMBINED_LIVE_ARR_CACHE_TTL_MS", 30_000);
 
 export async function GET() {
   try {
-    const payload = await getOrSetCache("api:combined-live-arr", CACHE_TTL_MS, () => buildCombinedLiveArrPayload());
+    const payload = await getOrSetCache(COMBINED_LIVE_ARR_CACHE_KEY, CACHE_TTL_MS, () => buildCombinedLiveArrPayload());
     return NextResponse.json(payload);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
@@ -18,7 +18,7 @@ export async function GET() {
 
 export async function POST() {
   try {
-    const payload = await getOrSetCache("api:combined-live-arr", CACHE_TTL_MS, () => buildCombinedLiveArrPayload());
+    const payload = await getOrSetCache(COMBINED_LIVE_ARR_CACHE_KEY, CACHE_TTL_MS, () => buildCombinedLiveArrPayload());
     return NextResponse.json(payload);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";

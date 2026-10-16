@@ -328,15 +328,54 @@ ADD COLUMN IF NOT EXISTS sync_run_id STRING
   await runBigQuerySqlStatement(
     `
 CREATE OR REPLACE VIEW ${tableRef(VIEW_FACT_CUSTOMER_ARR_CURRENT)} AS
+-- Each period shows the rows of ONE run, so customers a later run no longer writes
+-- (e.g. renamed keys) drop out instead of being added on top.
+-- Runs logged as finished OK win; runs with no log at all (older ones) come next;
+-- runs logged only as started or failed (cut off, or blocked by a fallback) are never shown.
+WITH run_status AS (
+  SELECT
+    JSON_VALUE(details_json, '$.syncRunId') AS sync_run_id,
+    LOGICAL_OR(ok) AS any_ok
+  FROM ${tableRef(TABLE_FACT_SYNC_RUNS)}
+  GROUP BY 1
+),
+candidate_runs AS (
+  SELECT
+    t.period_date,
+    t.grain,
+    IFNULL(t.sync_run_id, '') AS run_key,
+    MAX(t.updated_at) AS run_updated_at,
+    CASE
+      WHEN LOGICAL_OR(s.any_ok) THEN 2
+      WHEN LOGICAL_OR(s.sync_run_id IS NOT NULL) THEN 0
+      ELSE 1
+    END AS trust
+  FROM ${tableRef(TABLE_FACT_CUSTOMER_ARR)} t
+  LEFT JOIN run_status s ON s.sync_run_id = t.sync_run_id
+  GROUP BY 1, 2, 3
+),
+chosen_runs AS (
+  SELECT period_date, grain, run_key
+  FROM candidate_runs
+  WHERE trust > 0
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY period_date, grain
+    ORDER BY trust DESC, run_updated_at DESC
+  ) = 1
+)
 SELECT * EXCEPT(rn)
 FROM (
   SELECT
     t.*,
     ROW_NUMBER() OVER (
       PARTITION BY t.period_date, t.grain, t.customer_key
-      ORDER BY t.updated_at DESC, t.sync_run_id DESC
+      ORDER BY t.updated_at DESC
     ) AS rn
   FROM ${tableRef(TABLE_FACT_CUSTOMER_ARR)} t
+  JOIN chosen_runs c
+    ON c.period_date = t.period_date
+    AND c.grain = t.grain
+    AND c.run_key = IFNULL(t.sync_run_id, '')
 )
 WHERE rn = 1
 `,
@@ -428,6 +467,15 @@ async function syncCustomerArrPeriodic(startDate: string, endDate: string, grain
     includeSalesAssist: true,
     preferPrecomputedFacts: false,
   });
+
+  // A report that fell back (no HubSpot↔Stripe matching or no sales-assist flags) has the right
+  // totals but the wrong segment split. Fail the run so the saved data keeps the last good copy.
+  const blockingWarnings = (report.warnings || []).filter((warning) =>
+    /Grouped matching is temporarily unavailable|Sales-assist flag is temporarily unavailable/.test(warning),
+  );
+  if (blockingWarnings.length) {
+    throw new Error(`Not saved: ${blockingWarnings.join(" | ")}`);
+  }
 
   const rows: Array<Record<string, unknown>> = [];
   for (const row of report.rows || []) {
@@ -580,7 +628,20 @@ async function syncAiSpendDailyAgg(startDate: string, endDate: string, syncRunId
   return insertRowsChunked(TABLE_FACT_AI_SPEND_DAILY, rows, 5000);
 }
 
-async function writeSyncRun(result: PrecomputedFactsSyncResult, ok: boolean) {
+// The saved-data view trusts these log rows, so a write that fails is retried, then raised.
+async function writeSyncRun(result: PrecomputedFactsSyncResult, ok: boolean, attempts = 3) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await insertSyncRunRow(result, ok);
+      return;
+    } catch (error: unknown) {
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
+    }
+  }
+}
+
+async function insertSyncRunRow(result: PrecomputedFactsSyncResult, ok: boolean) {
   await insertBigQueryRows({
     projectId: PRECOMPUTED_PROJECT,
     dataset: PRECOMPUTED_DATASET,
@@ -682,6 +743,19 @@ export async function syncPrecomputedFacts(request: PrecomputedFactsSyncRequest)
         return "ok";
       });
     }
+    // Logged as not-OK up front: if the run is cut off, the saved-data view never shows its rows.
+    // No facts are written unless this marker is saved.
+    await runStep("log_started", () => writeSyncRun({
+      mode: window.mode,
+      startDate: window.startDate,
+      endDate: window.endDate,
+      syncRunId,
+      includeDaily: window.includeDaily,
+      includeMonthly: window.includeMonthly,
+      startedAtUtc,
+      finishedAtUtc: startedAtUtc,
+      steps: [{ step: "started", ok: false, detail: "run in progress", tookMs: 0 }],
+    }, false));
     if (window.includeDimDate) {
       await runStep("sync_dim_date", () => syncDateDimension(window.startDate, window.endDate));
     }
@@ -715,7 +789,17 @@ export async function syncPrecomputedFacts(request: PrecomputedFactsSyncRequest)
       steps,
     };
     const ok = steps.every((step) => step.ok);
-    await writeSyncRun(result, ok).catch(() => undefined);
+    const logError = await writeSyncRun(result, ok).then(() => null, (error: unknown) => error);
+    // A finished run whose success can't be logged stays hidden, so report it as failed.
+    if (ok && logError) {
+      steps.push({
+        step: "log_finished",
+        ok: false,
+        detail: logError instanceof Error ? logError.message : String(logError),
+        tookMs: 0,
+      });
+      throw logError;
+    }
   }
 
   return {

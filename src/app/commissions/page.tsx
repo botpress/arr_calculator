@@ -62,10 +62,10 @@ function statusLabel(row: CommissionDealRow) {
 }
 
 function statusColor(row: CommissionDealRow) {
-  if (row.status === "clawback") return "#b91c1c";
-  if (row.status === "protected") return "#166534";
-  if (row.status === "unmapped" || row.status === "ineligible") return "#92400e";
-  return "#1d4ed8";
+  if (row.status === "clawback") return "#b42318";
+  if (row.status === "protected") return "#3d7a33";
+  if (row.status === "unmapped" || row.status === "ineligible") return "#8b4804";
+  return "#2863b0";
 }
 
 export default function CommissionsPage() {
@@ -304,7 +304,7 @@ export default function CommissionsPage() {
           </button>
         </div>
         {error ? (
-          <p style={{ color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px" }}>
+          <p style={{ color: "#b42318", background: "#f8e3df", border: "1px solid #e8b4aa", borderRadius: 8, padding: "10px 12px" }}>
             {error}
           </p>
         ) : null}
@@ -333,7 +333,7 @@ export default function CommissionsPage() {
               </article>
               <article className="stripe-ui__stat">
                 <p className="stripe-ui__stat-label">Clawbacks</p>
-                <p className="stripe-ui__stat-value" style={{ color: filteredTotals.clawback > 0 ? "#b91c1c" : undefined }}>
+                <p className="stripe-ui__stat-value" style={{ color: filteredTotals.clawback > 0 ? "#b42318" : undefined }}>
                   {formatMoney(filteredTotals.clawback, currency)}
                 </p>
               </article>
@@ -383,7 +383,7 @@ export default function CommissionsPage() {
                     {owner.dealCount} commissioned deal{owner.dealCount === 1 ? "" : "s"} · Net {formatMoney(owner.netCommission, currency)}
                   </p>
                 </div>
-                <div style={{ color: "#475569", textAlign: "right" }}>
+                <div style={{ color: "#625d54", textAlign: "right" }}>
                   Gross {formatMoney(owner.grossCommission, currency)} · Clawback {formatMoney(owner.clawback, currency)}
                 </div>
               </div>
@@ -410,27 +410,27 @@ export default function CommissionsPage() {
                           <a href={deal.hubspotUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>
                             {deal.dealName}
                           </a>
-                          <div style={{ color: "#64748b", fontSize: 12 }}>#{deal.dealId}</div>
+                          <div style={{ color: "#625d54", fontSize: 12 }}>#{deal.dealId}</div>
                         </td>
                         <td>
                           <div>{deal.closeDate}</div>
-                          <div style={{ color: "#64748b", fontSize: 12 }}>{deal.pipelineName}</div>
-                          <div style={{ color: "#64748b", fontSize: 12 }}>{deal.dealType}</div>
+                          <div style={{ color: "#625d54", fontSize: 12 }}>{deal.pipelineName}</div>
+                          <div style={{ color: "#625d54", fontSize: 12 }}>{deal.dealType}</div>
                         </td>
                         <td style={{ maxWidth: 210, overflowWrap: "anywhere" }}>
                           {deal.workspaceId || "—"}
                           {deal.stripeCustomerIds.length ? (
-                            <div style={{ color: "#64748b", fontSize: 12 }}>{deal.stripeCustomerIds.join(", ")}</div>
+                            <div style={{ color: "#625d54", fontSize: 12 }}>{deal.stripeCustomerIds.join(", ")}</div>
                           ) : null}
                         </td>
                         <td>
                           <div style={{ textTransform: "capitalize" }}>{deal.paymentFrequency}</div>
-                          <div style={{ color: "#64748b", fontSize: 12 }}>{deal.commissionRatePct}% · {deal.termMonths} mo.</div>
+                          <div style={{ color: "#625d54", fontSize: 12 }}>{deal.commissionRatePct}% · {deal.termMonths} mo.</div>
                         </td>
                         <td>
                           {formatMoney(deal.dealAmount, currency)}
                           {deal.dealCurrency !== currency ? (
-                            <div style={{ color: "#64748b", fontSize: 12 }}>
+                            <div style={{ color: "#625d54", fontSize: 12 }}>
                               {formatMoney(deal.dealAmountOriginal, deal.dealCurrency)} source
                             </div>
                           ) : null}
@@ -438,23 +438,23 @@ export default function CommissionsPage() {
                         <td>
                           {formatMoney(deal.grossCommission, currency)}
                           {deal.clawback > 0 ? (
-                            <div style={{ color: "#64748b", fontSize: 12 }}>
+                            <div style={{ color: "#625d54", fontSize: 12 }}>
                               Original commission {formatMoney(deal.initialGrossCommission, currency)}
                             </div>
                           ) : null}
                         </td>
                         <td>
                           {formatMoney(deal.paidAmount, currency)}
-                          <div style={{ color: "#64748b", fontSize: 12 }}>
+                          <div style={{ color: "#625d54", fontSize: 12 }}>
                             3-mo target {formatMoney(deal.protectedAmount, currency)}
                           </div>
                           {deal.proratedOpeningPaymentAmount > 0 ? (
-                            <div style={{ color: "#92400e", fontSize: 12 }}>
+                            <div style={{ color: "#8b4804", fontSize: 12 }}>
                               Opening proration {formatMoney(deal.proratedOpeningPaymentAmount, currency)} excluded from target · Clock starts {deal.monitoringStart}
                             </div>
                           ) : null}
                         </td>
-                        <td style={{ color: deal.clawback > 0 ? "#b91c1c" : undefined }}>
+                        <td style={{ color: deal.clawback > 0 ? "#b42318" : undefined }}>
                           {formatMoney(deal.clawback, currency)}
                           {deal.clawbackEventDate ? (
                             <div style={{ fontSize: 12 }}>{deal.clawbackEventDate}</div>
@@ -464,10 +464,10 @@ export default function CommissionsPage() {
                         <td style={{ minWidth: 170 }}>
                           <span style={{ color: statusColor(deal), fontWeight: 700 }}>{statusLabel(deal)}</span>
                           {deal.fullyProtectedAt ? (
-                            <div style={{ color: "#64748b", fontSize: 12 }}>Paid through {deal.fullyProtectedAt}</div>
+                            <div style={{ color: "#625d54", fontSize: 12 }}>Paid through {deal.fullyProtectedAt}</div>
                           ) : null}
                           {deal.notes.map((note) => (
-                            <div key={note} style={{ color: "#92400e", fontSize: 12 }}>{note}</div>
+                            <div key={note} style={{ color: "#8b4804", fontSize: 12 }}>{note}</div>
                           ))}
                         </td>
                       </tr>
@@ -486,7 +486,7 @@ export default function CommissionsPage() {
           <section className="stripe-ui__panel ui-reveal">
             <h2 className="stripe-ui__panel-title">Methodology</h2>
             <p className="stripe-ui__panel-subtitle">{data.methodology.clawbackRule}</p>
-            <p style={{ color: "#475569", marginBottom: 0 }}>
+            <p style={{ color: "#625d54", marginBottom: 0 }}>
               HubSpot: {data.methodology.includedPipelines.join(" + ")} · Deal types: {data.methodology.dealTypes.join(" + ")} ({data.methodology.existingBusinessOwners.join(", ")}) · Rates: monthly 8%, quarterly 10%, annual 11%.{" "}
               Stripe source: {data.methodology.paymentSource}.
             </p>

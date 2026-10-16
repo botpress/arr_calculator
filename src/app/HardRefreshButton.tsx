@@ -419,7 +419,13 @@ export default function HardRefreshButton() {
     setMessage("");
     setSyncProgress("");
     try {
-      const fullHistoryStart = "2023-01-01";
+      const requestedStart = window.prompt("Rebuild saved data starting from (YYYY-MM-DD):", "2023-01-01");
+      if (requestedStart === null) return;
+      const fullHistoryStart = requestedStart.trim();
+      if (!/^\d{4}-\d{2}-01$/.test(fullHistoryStart)) {
+        setMessage("Start date must be the first of a month, like 2026-01-01.");
+        return;
+      }
       const endDate = toIsoDateUtc(new Date());
       const monthChunks = buildMonthChunks(fullHistoryStart, endDate, 1);
       if (!monthChunks.length) {
@@ -778,9 +784,9 @@ export default function HardRefreshButton() {
       {message ? (
         <div
           style={{
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
-            color: "#b91c1c",
+            background: "#f8e3df",
+            border: "1px solid #e8b4aa",
+            color: "#b42318",
             borderRadius: 8,
             padding: "8px 10px",
             maxWidth: 360,
@@ -793,9 +799,9 @@ export default function HardRefreshButton() {
       {syncProgress ? (
         <div
           style={{
-            background: "#eff6ff",
-            border: "1px solid #bfdbfe",
-            color: "#1e3a8a",
+            background: "#e8eff8",
+            border: "1px solid #bcd0ea",
+            color: "#1f4e8a",
             borderRadius: 8,
             padding: "8px 10px",
             maxWidth: 360,
@@ -808,14 +814,14 @@ export default function HardRefreshButton() {
       {isAdmin && debugPanelOpen ? (
         <div
           style={{
-            background: "#f8fafc",
-            border: "1px solid #cbd5e1",
-            color: "#0f172a",
+            background: "#f8f7f4",
+            border: "1px solid #e0dbd2",
+            color: "#050404",
             borderRadius: 10,
             padding: "10px 12px",
             width: 430,
             maxWidth: "calc(100vw - 24px)",
-            boxShadow: "0 4px 16px rgba(15,23,42,0.08)",
+            boxShadow: "0 4px 16px rgba(5,4,4,0.08)",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -825,9 +831,9 @@ export default function HardRefreshButton() {
               onClick={() => setDebugPanelOpen(false)}
               style={{
                 borderRadius: 8,
-                border: "1px solid #94a3b8",
-                background: "#ffffff",
-                color: "#334155",
+                border: "1px solid #c9c2b6",
+                background: "#f8f7f4",
+                color: "#625d54",
                 padding: "4px 8px",
                 fontSize: 12,
                 fontWeight: 600,
@@ -836,9 +842,9 @@ export default function HardRefreshButton() {
               Close
             </button>
           </div>
-          <div style={{ marginTop: 10, borderTop: "1px solid #cbd5e1", paddingTop: 10 }}>
+          <div style={{ marginTop: 10, borderTop: "1px solid #e0dbd2", paddingTop: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Remaining backfill only</div>
-            <div style={{ fontSize: 11, color: "#334155", lineHeight: 1.4 }}>
+            <div style={{ fontSize: 11, color: "#625d54", lineHeight: 1.4 }}>
               Runs only missing ranges (AI spend history gaps and missing TOFU monthly windows).
             </div>
             <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
@@ -855,7 +861,7 @@ export default function HardRefreshButton() {
                 style={{
                   borderRadius: 8,
                   border: "1px solid #166534",
-                  background: remainingBackfillLoading ? "#166534" : "#16a34a",
+                  background: remainingBackfillLoading ? "#166534" : "#15803d",
                   color: "#ffffff",
                   padding: "6px 10px",
                   fontSize: 12,
@@ -874,14 +880,14 @@ export default function HardRefreshButton() {
               </button>
             </div>
           </div>
-          <div style={{ marginTop: 10, borderTop: "1px solid #cbd5e1", paddingTop: 10 }}>
+          <div style={{ marginTop: 10, borderTop: "1px solid #e0dbd2", paddingTop: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>ARR/FTE refresh only</div>
-            <div style={{ fontSize: 11, color: "#334155", lineHeight: 1.4 }}>
+            <div style={{ fontSize: 11, color: "#625d54", lineHeight: 1.4 }}>
               Recomputes only BambooHR-based ARR/FTE values for combined billing cache rows in this date range.
             </div>
             <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <label style={{ fontSize: 11, color: "#334155" }}>
+                <label style={{ fontSize: 11, color: "#625d54" }}>
                   Start
                   <input
                     type="date"
@@ -889,14 +895,14 @@ export default function HardRefreshButton() {
                     onChange={(event) => setArrFteStartDate(event.target.value)}
                     style={{
                       marginLeft: 6,
-                      border: "1px solid #94a3b8",
+                      border: "1px solid #c9c2b6",
                       borderRadius: 6,
                       padding: "4px 6px",
                       fontSize: 12,
                     }}
                   />
                 </label>
-                <label style={{ fontSize: 11, color: "#334155" }}>
+                <label style={{ fontSize: 11, color: "#625d54" }}>
                   End
                   <input
                     type="date"
@@ -904,7 +910,7 @@ export default function HardRefreshButton() {
                     onChange={(event) => setArrFteEndDate(event.target.value)}
                     style={{
                       marginLeft: 6,
-                      border: "1px solid #94a3b8",
+                      border: "1px solid #c9c2b6",
                       borderRadius: 6,
                       padding: "4px 6px",
                       fontSize: 12,
@@ -990,7 +996,7 @@ export default function HardRefreshButton() {
               style={{
                 borderRadius: 10,
                 border: "1px solid #0369a1",
-                background: debugPanelOpen ? "#075985" : "#0ea5e9",
+                background: debugPanelOpen ? "#075985" : "#0369a1",
                 color: "#ffffff",
                 padding: "10px 12px",
                 fontSize: 13,
@@ -1033,9 +1039,9 @@ export default function HardRefreshButton() {
           disabled={loading || syncLoading || backfillLoading || remainingBackfillLoading || arrFteRefreshLoading}
           style={{
             borderRadius: 10,
-            border: "1px solid #0f172a",
-            background: loading ? "#1f2937" : "#111827",
-            color: "#ffffff",
+            border: "1px solid #050404",
+            background: loading ? "#3a3833" : "#050404",
+            color: "#f8f7f4",
             padding: "10px 12px",
             fontSize: 13,
             fontWeight: 700,
@@ -1052,9 +1058,9 @@ export default function HardRefreshButton() {
       {lastSyncAtUtc ? (
         <div
           style={{
-            background: "#ecfdf5",
-            border: "1px solid #a7f3d0",
-            color: "#065f46",
+            background: "#e6efdf",
+            border: "1px solid #b9d1ae",
+            color: "#3d7a33",
             borderRadius: 8,
             padding: "6px 10px",
             maxWidth: 420,

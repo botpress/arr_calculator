@@ -29,7 +29,7 @@ function resolveChartBackground(svg: SVGSVGElement) {
     }
     current = current.parentElement;
   }
-  return "#0e203b";
+  return "#f8f7f4";
 }
 
 function ensureRootMetadata(clone: SVGSVGElement, width: number, height: number) {
