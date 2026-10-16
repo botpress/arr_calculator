@@ -30,14 +30,12 @@ function monthLabel(monthKey: string, withYear = false) {
   }).format(new Date(Date.UTC(year, month - 1, 15)));
 }
 
-function formatDateTime(iso: string) {
-  if (!iso) return "unknown";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
+function formatAsOf(iso: string) {
+  if (!iso) return "";
+  const at = new Date(iso);
+  const day = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(at);
+  const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(at);
+  return `${day} · ${time}`;
 }
 
 function formatDate(isoDate: string) {
@@ -50,12 +48,6 @@ function formatDate(isoDate: string) {
 function daysUntil(isoDate: string) {
   const target = Date.parse(`${isoDate}T23:59:59.000Z`);
   return Math.max(0, Math.ceil((target - Date.now()) / 86_400_000));
-}
-
-function daysSince(isoDate: string) {
-  const at = Date.parse(isoDate.length === 10 ? `${isoDate}T00:00:00.000Z` : isoDate);
-  if (!Number.isFinite(at)) return Infinity;
-  return (Date.now() - at) / 86_400_000;
 }
 
 export default function HomeDashboard() {
@@ -82,12 +74,6 @@ export default function HomeDashboard() {
   useEffect(() => {
     void load(false);
   }, [load]);
-
-  const syncHealthy = useMemo(() => {
-    const sync = data?.lastNightlySync;
-    if (!sync) return false;
-    return sync.failedTaskCount === 0 && daysSince(sync.finishedAtUtc) < 1.5;
-  }, [data]);
 
   const aiMax = useMemo(() => Math.max(1, ...(data?.aiSpend.monthly || []).map((m) => m.billed)), [data]);
 
@@ -135,15 +121,6 @@ export default function HomeDashboard() {
   return (
     <main className="home">
       <div className="home-status">
-        <span className={`home-dot ${syncHealthy ? "home-dot--ok" : "home-dot--warn"}`} aria-hidden="true" />
-        <span>
-          Live figures as of {formatDateTime(live.asOfUtc)}
-          {data.lastNightlySync
-            ? syncHealthy
-              ? " · nightly refresh OK"
-              : ` · nightly refresh ${data.lastNightlySync.failedTaskCount ? `had ${data.lastNightlySync.failedTaskCount} failed steps` : "is late"} (last ${formatDateTime(data.lastNightlySync.finishedAtUtc)})`
-            : " · nightly refresh status unknown"}
-        </span>
         <button type="button" className="home-button" onClick={() => void load(true)} disabled={refreshing}>
           {refreshing ? "Refreshing…" : "Refresh"}
         </button>
@@ -164,6 +141,10 @@ export default function HomeDashboard() {
             </span>
           )}
         </div>
+        <p className="home-asof">
+          <span className="home-dot home-dot--ok" aria-hidden="true" />
+          {formatAsOf(live.asOfUtc)}
+        </p>
         <div className="home-split" role="img" aria-label="Total ARR split by self-serve, sales-led Cloud and Legacy">
           <div className="home-swatch--selfserve" style={{ width: share(live.selfServeArr) }} />
           <div className="home-swatch--salesled" style={{ width: share(live.salesLedCloudArr) }} />
