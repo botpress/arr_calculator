@@ -94,7 +94,6 @@ export default function AppNavigation() {
         {
           label: "Overview",
           items: [
-            { href: "/", label: "Home" },
             { href: "/combined-all-subs", label: "All subscriptions" },
             { href: "/combined-billing-overview", label: "Billing overview" },
           ],
@@ -168,6 +167,15 @@ export default function AppNavigation() {
           <span>ARR Calculator</span>
         </Link>
         <div className="app-nav__groups" ref={groupsRef}>
+          {homeHref === "/" && (
+            <Link
+              aria-current={pathname === "/" ? "page" : undefined}
+              className={pathname === "/" ? "app-nav__summary app-nav__summary--active" : "app-nav__summary"}
+              href="/"
+            >
+              Dashboard
+            </Link>
+          )}
           {groups.map((group) => {
             const groupActive = group.items.some((item) => isActive(pathname, item.href));
             return (
