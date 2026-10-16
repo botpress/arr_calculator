@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { MouseEvent } from "react";
 import BotpressLogo from "./BotpressLogo";
 
@@ -40,6 +40,28 @@ export default function AppNavigation() {
   const [roles, setRoles] = useState<string[]>([]);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const groupsRef = useRef<HTMLDivElement>(null);
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // With a mouse, menus open on hover and close shortly after the pointer leaves (the delay
+  // covers the small gap between the button and the menu). Touch and keyboard still use click.
+  function openOnHover(event: ReactPointerEvent<HTMLDetailsElement>) {
+    if (event.pointerType !== "mouse") return;
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    const menu = event.currentTarget;
+    groupsRef.current?.querySelectorAll("details[open]").forEach((other) => {
+      if (other !== menu) (other as HTMLDetailsElement).open = false;
+    });
+    menu.open = true;
+  }
+
+  function closeOnHoverLeave(event: ReactPointerEvent<HTMLDetailsElement>) {
+    if (event.pointerType !== "mouse") return;
+    const menu = event.currentTarget;
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = setTimeout(() => {
+      menu.open = false;
+    }, 150);
+  }
 
   // Close open menus when clicking anywhere outside them, or on Escape.
   useEffect(() => {
@@ -181,8 +203,19 @@ export default function AppNavigation() {
           {groups.map((group) => {
             const groupActive = group.items.some((item) => isActive(pathname, item.href));
             return (
-              <details className="app-nav__group" key={group.label}>
-                <summary className={groupActive ? "app-nav__summary app-nav__summary--active" : "app-nav__summary"}>
+              <details
+                className="app-nav__group"
+                key={group.label}
+                onPointerEnter={openOnHover}
+                onPointerLeave={closeOnHoverLeave}
+              >
+                <summary
+                  className={groupActive ? "app-nav__summary app-nav__summary--active" : "app-nav__summary"}
+                  onClick={(event) => {
+                    // Hover already opened it; a mouse click shouldn't toggle it shut.
+                    if ((event.nativeEvent as PointerEvent).pointerType === "mouse") event.preventDefault();
+                  }}
+                >
                   {group.label}
                   <span aria-hidden="true" className="app-nav__chevron">⌄</span>
                 </summary>
