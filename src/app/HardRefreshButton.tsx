@@ -419,7 +419,13 @@ export default function HardRefreshButton() {
     setMessage("");
     setSyncProgress("");
     try {
-      const fullHistoryStart = "2023-01-01";
+      const requestedStart = window.prompt("Rebuild saved data starting from (YYYY-MM-DD):", "2023-01-01");
+      if (requestedStart === null) return;
+      const fullHistoryStart = requestedStart.trim();
+      if (!/^\d{4}-\d{2}-01$/.test(fullHistoryStart)) {
+        setMessage("Start date must be the first of a month, like 2026-01-01.");
+        return;
+      }
       const endDate = toIsoDateUtc(new Date());
       const monthChunks = buildMonthChunks(fullHistoryStart, endDate, 1);
       if (!monthChunks.length) {

@@ -569,6 +569,8 @@ async function loadSalesAssistWorkspaceEventsByWorkspaceId(): Promise<Map<string
 
   const out = new Map<string, SalesAssistWorkspaceEvent[]>();
   const onMatches = await fetchSalesAssistDealMatches();
+  // The "on" list covers all time, so an empty result means the HubSpot lookup failed quietly.
+  if (!onMatches.length) throw new Error("HubSpot returned no sales-assist deals");
   for (const match of onMatches) {
     const workspaceId = normalizeWorkspaceId(match.workspaceId);
     const atMs = Number(match.closedAtMs);
