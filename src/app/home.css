@@ -87,7 +87,15 @@
   align-items: baseline;
   gap: 14px;
   flex-wrap: wrap;
-  margin: 2px 0 12px;
+  margin: 2px 0 2px;
+}
+.home-asof {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--home-ink-3);
+  font-size: 0.78rem;
 }
 .home-hero__number { font-size: 2.6rem; font-weight: 600; letter-spacing: -0.02em; }
 
