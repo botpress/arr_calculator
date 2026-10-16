@@ -129,6 +129,21 @@ body {
   user-select: none;
 }
 
+.app-nav__tools {
+  margin-left: auto;
+  background: none;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.app-nav__busy-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--link);
+}
+
 a.app-nav__summary {
   text-decoration: none;
 }
