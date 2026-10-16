@@ -3,7 +3,7 @@ import { queryPrecomputedMonthlyArrBySource } from "@/lib/precomputedFactsRead";
 import { generateReport } from "@/lib/report";
 import { getOrSetCache, readServerCacheSyncStatus, readTtlMs } from "@/lib/serverResponseCache";
 
-export const HOME_SUMMARY_CACHE_KEY = "api:home-summary:v1";
+export const HOME_SUMMARY_CACHE_KEY = "api:home-summary:v2";
 export const LEGACY_SUNSET_DATE = "2026-12-31";
 const TREND_MONTHS = 12;
 
@@ -28,12 +28,14 @@ export type HomeSummaryPayload = {
     legacyDeals: CombinedLiveArrPayload["legacyDeals"];
   };
   aiSpend: {
-    // Usage billing, kept out of ARR. Month-to-date amount comes from the latest upcoming-invoice snapshot.
-    snapshotDate: string;
-    monthToDate: number;
-    annualizedRunRate: number;
+    // Usage billing, kept out of ARR: what was invoiced in the last full month, and that × 12.
+    lastMonthKey: string;
+    lastMonthBilled: number;
+    annualized: number;
   };
-  lastMonth: { monthKey: string; totalArr: number } | null;
+  // Change between the last two completed month-ends (same method on both sides). Mid-month
+  // figures aren't compared because Stripe period-end cancellations land on the 1st of each month.
+  lastMonthChange: { monthKey: string; previousMonthKey: string; change: number } | null;
   trend: HomeTrendPoint[];
   legacySunsetDate: string;
   lastNightlySync: { finishedAtUtc: string; failedTaskCount: number; totalTaskCount: number } | null;
@@ -97,6 +99,7 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
     };
   });
   const last = trend[trend.length - 1];
+  const previous = trend[trend.length - 2];
 
   const selfServeArr = round2(live.stripeCurrentArr);
   const salesLedCloudArr = round2(live.hubspotCurrentArr);
@@ -115,11 +118,13 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
       legacyDeals: live.legacyDeals,
     },
     aiSpend: {
-      snapshotDate: live.upcomingSnapshotDate,
-      monthToDate: live.upcomingMonthlyAmount,
-      annualizedRunRate: live.upcomingAnnualizedProjection,
+      lastMonthKey: String(live.aiSpendLastMonthStartDate || "").slice(0, 7),
+      lastMonthBilled: round2(live.aiSpendLastMonthAmount),
+      annualized: round2(live.aiSpendLastMonthAmount * 12),
     },
-    lastMonth: last ? { monthKey: last.monthKey, totalArr: last.totalArr } : null,
+    lastMonthChange: last && previous
+      ? { monthKey: last.monthKey, previousMonthKey: previous.monthKey, change: round2(last.totalArr - previous.totalArr) }
+      : null,
     trend,
     legacySunsetDate: LEGACY_SUNSET_DATE,
     lastNightlySync: lastSync
