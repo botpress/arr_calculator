@@ -628,7 +628,20 @@ async function syncAiSpendDailyAgg(startDate: string, endDate: string, syncRunId
   return insertRowsChunked(TABLE_FACT_AI_SPEND_DAILY, rows, 5000);
 }
 
-async function writeSyncRun(result: PrecomputedFactsSyncResult, ok: boolean) {
+// The saved-data view trusts these log rows, so a write that fails is retried, then raised.
+async function writeSyncRun(result: PrecomputedFactsSyncResult, ok: boolean, attempts = 3) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await insertSyncRunRow(result, ok);
+      return;
+    } catch (error: unknown) {
+      if (attempt >= attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
+    }
+  }
+}
+
+async function insertSyncRunRow(result: PrecomputedFactsSyncResult, ok: boolean) {
   await insertBigQueryRows({
     projectId: PRECOMPUTED_PROJECT,
     dataset: PRECOMPUTED_DATASET,
@@ -731,7 +744,8 @@ export async function syncPrecomputedFacts(request: PrecomputedFactsSyncRequest)
       });
     }
     // Logged as not-OK up front: if the run is cut off, the saved-data view never shows its rows.
-    await writeSyncRun({
+    // No facts are written unless this marker is saved.
+    await runStep("log_started", () => writeSyncRun({
       mode: window.mode,
       startDate: window.startDate,
       endDate: window.endDate,
@@ -741,7 +755,7 @@ export async function syncPrecomputedFacts(request: PrecomputedFactsSyncRequest)
       startedAtUtc,
       finishedAtUtc: startedAtUtc,
       steps: [{ step: "started", ok: false, detail: "run in progress", tookMs: 0 }],
-    }, false).catch(() => undefined);
+    }, false));
     if (window.includeDimDate) {
       await runStep("sync_dim_date", () => syncDateDimension(window.startDate, window.endDate));
     }
@@ -775,7 +789,17 @@ export async function syncPrecomputedFacts(request: PrecomputedFactsSyncRequest)
       steps,
     };
     const ok = steps.every((step) => step.ok);
-    await writeSyncRun(result, ok).catch(() => undefined);
+    const logError = await writeSyncRun(result, ok).then(() => null, (error: unknown) => error);
+    // A finished run whose success can't be logged stays hidden, so report it as failed.
+    if (ok && logError) {
+      steps.push({
+        step: "log_finished",
+        ok: false,
+        detail: logError instanceof Error ? logError.message : String(logError),
+        tookMs: 0,
+      });
+      throw logError;
+    }
   }
 
   return {
