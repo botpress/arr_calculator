@@ -89,6 +89,8 @@ export default function HomeDashboard() {
     return sync.failedTaskCount === 0 && daysSince(sync.finishedAtUtc) < 1.5;
   }, [data]);
 
+  const aiMax = useMemo(() => Math.max(1, ...(data?.aiSpend.monthly || []).map((m) => m.billed)), [data]);
+
   const trendMax = useMemo(() => {
     const totals = (data?.trend || []).map((p) => p.totalArr);
     if (data) totals.push(data.live.totalArr);
@@ -216,6 +218,18 @@ export default function HomeDashboard() {
                   <div className="home-swatch--selfserve" style={{ flexGrow: bar.selfServeArr }} />
                 </div>
                 <span className="home-chart__label">{bar.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="home-label home-label--spaced">AI spend billed per month (not in ARR)</p>
+          <div className="home-chart home-chart--short">
+            {data.aiSpend.monthly.map((m) => (
+              <div key={m.monthKey} className="home-chart__col" title={`${monthLabel(m.monthKey, true)}: ${formatMoney(m.billed)} billed`}>
+                <span className="home-chart__total">{formatMoney(m.billed)}</span>
+                <div className="home-chart__stack" style={{ height: `${(m.billed / aiMax) * 100}%` }}>
+                  <div className="home-swatch--ai" style={{ flexGrow: 1 }} />
+                </div>
+                <span className="home-chart__label">{monthLabel(m.monthKey)}</span>
               </div>
             ))}
           </div>
