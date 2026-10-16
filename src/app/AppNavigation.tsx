@@ -116,6 +116,7 @@ export default function AppNavigation() {
             { href: "/ai-spend", label: "AI spend" },
             { href: "/quickbooks", label: "QuickBooks" },
             { href: "/account-management", label: "Account management" },
+            { href: "/renewals", label: "Renewals" },
             { href: "/migration", label: "Pricing migration" },
             { href: "/scorecards", label: "Team scorecards" },
           ],
@@ -126,6 +127,7 @@ export default function AppNavigation() {
         label: "Operations",
         items: [
           { href: "/account-management", label: "Account management" },
+          { href: "/renewals", label: "Renewals" },
           { href: "/migration", label: "Pricing migration" },
         ],
       });

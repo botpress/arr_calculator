@@ -96,6 +96,10 @@ export function isAccountManagementAllowedApplicationPath(pathname: string) {
     normalized.startsWith("/account-management/") ||
     normalized === "/api/account-management" ||
     normalized.startsWith("/api/account-management/") ||
+    normalized === "/renewals" ||
+    normalized.startsWith("/renewals/") ||
+    normalized === "/api/renewals" ||
+    normalized.startsWith("/api/renewals/") ||
     normalized === "/migration" ||
     normalized.startsWith("/migration/") ||
     normalized === "/api/migration" ||

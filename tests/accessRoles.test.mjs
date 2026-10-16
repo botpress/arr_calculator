@@ -100,6 +100,17 @@ test("restricts account management users to the account management and migration
   assert.equal(isAccountManagementAllowedApplicationPath("/migration-other"), false);
 });
 
+test("lets account management users, but not sales-only users, open the renewals page and API", () => {
+  assert.equal(isAccountManagementAllowedApplicationPath("/renewals"), true);
+  assert.equal(isAccountManagementAllowedApplicationPath("/api/renewals"), true);
+  assert.equal(isAccountManagementAllowedApplicationPath("/renewals-other"), false);
+  assert.equal(isAssignedRoleAllowedApplicationPath("account_management", "/renewals"), true);
+  assert.equal(isAssignedRoleAllowedApplicationPath("account_management", "/api/renewals"), true);
+  assert.equal(isAssignedRoleAllowedApplicationPath("sales", "/renewals"), false);
+  assert.equal(isAssignedRoleAllowedApplicationPath("sales", "/api/renewals"), false);
+  assert.equal(isAssignedRoleAllowedApplicationPath("gtm", "/renewals"), false);
+});
+
 test("restricts GTM users to the GTM page and API", () => {
   assert.equal(isGtmAllowedApplicationPath("/gtm"), true);
   assert.equal(isGtmAllowedApplicationPath("/gtm/details"), true);
