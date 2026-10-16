@@ -5,7 +5,6 @@ import { resolveEnterprisePrepaidAiSpendExclusions } from "@/lib/aiSpendEnterpri
 import { queryStripeAiSpendFromBigQuery } from "@/lib/stripeBigquery";
 import { getOrSetCache, readServerCacheSyncStatus, readTtlMs } from "@/lib/serverResponseCache";
 
-export const HOME_SUMMARY_CACHE_KEY = "api:home-summary:v3";
 export const LEGACY_SUNSET_DATE = "2026-12-31";
 const TREND_MONTHS = 12;
 

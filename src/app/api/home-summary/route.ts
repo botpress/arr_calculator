@@ -1,22 +1,23 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { buildHomeSummaryPayload, HOME_SUMMARY_CACHE_KEY } from "@/lib/homeSummary";
-import { getOrSetCache, readTtlMs, setServerResponseCache } from "@/lib/serverResponseCache";
+import { homeSummaryAgeHours, readStoredHomeSummary, rebuildHomeSummary } from "@/lib/homeSummaryStore";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
-// Rebuilt by the nightly job; "Refresh" rebuilds on demand.
-const CACHE_TTL_MS = readTtlMs("API_HOME_SUMMARY_CACHE_TTL_MS", 24 * 60 * 60 * 1000);
+// Older than this, a page view also starts a background rebuild (the nightly job rebuilds anyway).
+const REFRESH_AFTER_HOURS = Number(process.env.HOME_SUMMARY_REFRESH_AFTER_HOURS || 6);
 
 async function handle(refresh: boolean) {
   try {
-    if (refresh) {
-      const payload = await buildHomeSummaryPayload();
-      await setServerResponseCache(HOME_SUMMARY_CACHE_KEY, CACHE_TTL_MS, payload);
-      return NextResponse.json(payload);
+    if (refresh) return NextResponse.json(await rebuildHomeSummary());
+
+    const stored = await readStoredHomeSummary();
+    if (!stored) return NextResponse.json(await rebuildHomeSummary());
+
+    if (homeSummaryAgeHours(stored) > REFRESH_AFTER_HOURS) {
+      after(() => rebuildHomeSummary().then(() => undefined, () => undefined));
     }
-    const payload = await getOrSetCache(HOME_SUMMARY_CACHE_KEY, CACHE_TTL_MS, () => buildHomeSummaryPayload());
-    return NextResponse.json(payload);
+    return NextResponse.json(stored);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
