@@ -122,6 +122,7 @@ type SalesCyclePoint = {
 type CombinedLiveArrResponse = {
   generatedAtUtc: string;
   liveArr: number;
+  legacyArr?: number;
   projectedArr: number;
   projectedArrBreakdown?: {
     aiSpendMonthlyWithoutExclusions: number;
@@ -193,6 +194,7 @@ type CombinedOverviewData = {
   currentArr: number;
   liveArr: number;
   liveArrAsOfUtc: string;
+  legacyArr: number;
   projectedArr: number;
   projectedArrBreakdown: {
     aiSpendMonthlyWithoutExclusions: number;
@@ -2810,6 +2812,7 @@ export default function CombinedBillingOverviewPage() {
         currentArr: round2(overview.currentArr || 0),
         liveArr: round2(prev?.liveArr || 0),
         liveArrAsOfUtc: String(prev?.liveArrAsOfUtc || ""),
+        legacyArr: round2(prev?.legacyArr || 0),
         projectedArr: round2(prev?.projectedArr || 0),
         projectedArrBreakdown: {
           aiSpendMonthlyWithoutExclusions: round2(
@@ -2857,6 +2860,7 @@ export default function CombinedBillingOverviewPage() {
               ...prev,
               liveArr: round2(liveArrData.liveArr || 0),
               liveArrAsOfUtc: String(liveArrData.generatedAtUtc || ""),
+              legacyArr: round2(liveArrData.legacyArr || 0),
               projectedArr: round2(liveArrData.projectedArr || 0),
               projectedArrBreakdown: {
                 aiSpendMonthlyWithoutExclusions: round2(
@@ -3232,6 +3236,10 @@ export default function CombinedBillingOverviewPage() {
               <div className="stripe-ui__stat">
                 <p className="stripe-ui__stat-label">Live MRR</p>
                 <p className="stripe-ui__stat-value">{formatMoney(round2(data.liveArr / 12), currency)}</p>
+              </div>
+              <div className="stripe-ui__stat" title="HubSpot contracts not marked Cloud. Not included in Live ARR; they end Dec 31, 2026.">
+                <p className="stripe-ui__stat-label">Legacy ARR (ends Dec 31)</p>
+                <p className="stripe-ui__stat-value">{formatMoney(data.legacyArr, currency)}</p>
               </div>
               <div className="stripe-ui__stat">
                 <p className="stripe-ui__stat-label">Projected ARR (EOM)</p>

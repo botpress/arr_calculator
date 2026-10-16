@@ -178,3 +178,32 @@ ORDER BY period_date, group_type, group_value
     endingArr: toNum(row.ending_arr),
   })) satisfies PrecomputedFactTofuMonthlyRow[];
 }
+
+// Month-end ARR per month, split by where the customer is billed (HubSpot account vs Stripe only).
+export async function queryPrecomputedMonthlyArrBySource(params: { startDate: string; endDate: string }) {
+  const rows = await runBigQuerySqlRows(
+    `
+SELECT
+  FORMAT_DATE('%Y-%m', period_date) AS month_key,
+  SUM(IF(source = 'hubspot_account', arr_end, 0)) AS hubspot_arr,
+  SUM(IF(source = 'hubspot_account', 0, arr_end)) AS stripe_arr,
+  COUNTIF(arr_end > 0) AS paying_customers
+FROM ${viewRef(VIEW_FACT_CUSTOMER_ARR_CURRENT)}
+WHERE grain = 'monthly'
+  AND period_date BETWEEN DATE(@start_date) AND DATE(@end_date)
+GROUP BY month_key
+ORDER BY month_key
+`,
+    [
+      { name: "start_date", type: "STRING", value: params.startDate },
+      { name: "end_date", type: "STRING", value: params.endDate },
+    ],
+    { profile: PROFILE },
+  );
+  return rows.map((row) => ({
+    monthKey: String(row.month_key || ""),
+    hubspotArr: toNum(row.hubspot_arr),
+    stripeArr: toNum(row.stripe_arr),
+    payingCustomers: Math.floor(toNum(row.paying_customers)),
+  }));
+}

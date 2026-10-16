@@ -94,6 +94,7 @@ export default function AppNavigation() {
         {
           label: "Overview",
           items: [
+            { href: "/", label: "Home" },
             { href: "/combined-all-subs", label: "All subscriptions" },
             { href: "/combined-billing-overview", label: "Billing overview" },
           ],
@@ -150,7 +151,7 @@ export default function AppNavigation() {
   }, [roles]);
 
   const homeHref = useMemo(() => {
-    if (roles.includes("admin") || roles.includes("viewer")) return "/combined-all-subs";
+    if (roles.includes("admin") || roles.includes("viewer")) return "/";
     if (roles.includes("sales")) return "/commissions";
     if (roles.includes("account_management")) return "/migration";
     if (roles.includes("gtm")) return "/gtm";

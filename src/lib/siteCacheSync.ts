@@ -14,6 +14,7 @@ import { clearStripeReportMemoryCache } from "@/lib/stripeReport";
 import { POST as combinedAllSubsPost } from "@/app/api/combined-all-subs-report/route";
 import { POST as combinedBillingOverviewPost } from "@/app/api/combined-billing-overview-report/route";
 import { POST as combinedLiveArrPost } from "@/app/api/combined-live-arr/route";
+import { POST as homeSummaryPost } from "@/app/api/home-summary/route";
 import { POST as modelUpdateAnalyticsPost } from "@/app/api/model-update-analytics/route";
 import { POST as hubspotViewModelPost } from "@/app/api/hubspot-view-model/route";
 import { POST as stripeAiSpendPost } from "@/app/api/stripe-ai-spend-report/route";
@@ -695,6 +696,12 @@ export function buildWarmupTaskDefinitions(syncMode: SyncMode = "fast", options:
       handler: combinedLiveArrPost,
       source: "mixed",
       body: {},
+    },
+    {
+      key: "home-summary",
+      handler: homeSummaryPost,
+      source: "mixed",
+      body: { refresh: true },
     },
     {
       key: "model-update-analytics:current-day",
