@@ -183,8 +183,34 @@ function isUnknownPropertyError(error: unknown) {
   );
 }
 
+// HubSpot rate-limits per account: CRM search allows ~5 requests/second, other endpoints more.
+// Reports (and the nightly job, which runs several at once) fire lookups in parallel, which tripped
+// those limits and made matching and sales-assist lookups fail. Every request now waits for its
+// turn in a shared queue, spaced to stay under the limits, and a 429 pauses the whole queue.
+const HUBSPOT_SEARCH_MIN_GAP_MS = Math.max(0, Number(process.env.HUBSPOT_SEARCH_MIN_GAP_MS || 260));
+const HUBSPOT_OTHER_MIN_GAP_MS = Math.max(0, Number(process.env.HUBSPOT_OTHER_MIN_GAP_MS || 70));
+
+const hubspotLanes = {
+  search: { nextSlotAt: 0, gapMs: HUBSPOT_SEARCH_MIN_GAP_MS },
+  other: { nextSlotAt: 0, gapMs: HUBSPOT_OTHER_MIN_GAP_MS },
+};
+let hubspotPausedUntil = 0;
+
+async function waitForHubspotSlot(url: string) {
+  const lane = /\/search(\?|$)/.test(url) ? hubspotLanes.search : hubspotLanes.other;
+  // Reserve the next slot synchronously so concurrent callers line up instead of colliding.
+  const slotAt = Math.max(Date.now(), lane.nextSlotAt, hubspotPausedUntil);
+  lane.nextSlotAt = slotAt + lane.gapMs;
+  const waitMs = slotAt - Date.now();
+  if (waitMs > 0) await sleep(waitMs);
+  // A 429 seen while waiting pushes everyone back.
+  const pausedMs = hubspotPausedUntil - Date.now();
+  if (pausedMs > 0) await sleep(pausedMs);
+}
+
 async function hsFetch(url: string, init?: RequestInit) {
   for (let attempt = 0; attempt <= HUBSPOT_MAX_RETRIES; attempt++) {
+    await waitForHubspotSlot(url);
     const res = await fetch(url, {
       ...init,
       headers: {
@@ -207,6 +233,7 @@ async function hsFetch(url: string, init?: RequestInit) {
     const backoffMs = HUBSPOT_BASE_BACKOFF_MS * Math.pow(2, attempt);
     const jitterMs = Math.floor(Math.random() * 250);
     const waitMs = Math.max(retryAfterMs ?? 0, backoffMs + jitterMs);
+    if (res.status === 429) hubspotPausedUntil = Math.max(hubspotPausedUntil, Date.now() + waitMs);
     await sleep(waitMs);
   }
 
