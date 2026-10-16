@@ -262,44 +262,5 @@
 
 .home-tile__delta { margin-left: 8px; font-size: 0.85rem; font-weight: 500; }
 
-.home-waterfall { margin-bottom: 14px; }
-.home-waterfall__plot {
-  position: relative;
-  display: flex;
-  gap: 10px;
-  height: 190px;
-  margin-top: 26px;
-  border-bottom: 1px solid var(--home-line);
-}
-.home-waterfall__col { position: relative; flex: 1; }
-.home-waterfall__bar {
-  position: absolute;
-  left: 12%;
-  right: 12%;
-  border-radius: 3px;
-  transform-origin: bottom;
-  animation: home-bar-grow 520ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
-}
-.home-waterfall__bar--total { background: var(--home-salesled); }
-.home-waterfall__bar--up { background: var(--home-good); }
-.home-waterfall__bar--down { background: var(--home-critical); }
-.home-waterfall__value {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 0.75rem;
-  color: var(--home-ink-2);
-  white-space: nowrap;
-}
-.home-waterfall__labels {
-  display: flex;
-  gap: 10px;
-  margin: 6px 0 8px;
-}
-.home-waterfall__labels span {
-  flex: 1;
-  text-align: center;
-  font-size: 0.75rem;
-  color: var(--home-ink-3);
-}
+.home-tooltip__section { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--home-line); }
+.home-tooltip__subtitle { margin: 0 0 2px; color: var(--home-ink-3); font-size: 0.75rem; }

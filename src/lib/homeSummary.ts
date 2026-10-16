@@ -18,6 +18,8 @@ export type HomeTrendPoint = {
   salesLedCloudArr: number;
   legacyArr: number;
   totalArr: number;
+  // Cloud ARR movement during the month (same saved data as the ARR movements page).
+  movement?: { newArr: number; expansionArr: number; contractionArr: number; churnArr: number };
 };
 
 export type RetentionFigures = { nrrPct: number; grrPct: number; customers: number; startArr: number };
@@ -49,15 +51,6 @@ export type HomeSummaryPayload = {
     combined: RetentionFigures;
     salesLed: RetentionFigures;
     selfServe: RetentionFigures;
-  } | null;
-  movement: {
-    monthKey: string;
-    beginningArr: number;
-    newArr: number;
-    expansionArr: number;
-    contractionArr: number;
-    churnArr: number;
-    endingArr: number;
   } | null;
   payingCustomers: {
     monthKey: string;
@@ -170,13 +163,25 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
     readServerCacheSyncStatus().catch(() => null),
     aiSpendByMonth(trendStartDate, trendEndDate, isoDate(now)),
     queryPrecomputedRetentionBySource({ startMonth: retentionStartMonth, endMonth: lastMonthKey }).catch(() => []),
-    queryPrecomputedTofuMonthlyCurrent({ startDate: trendEndDate, endDate: trendEndDate }).catch(() => []),
+    queryPrecomputedTofuMonthlyCurrent({ startDate: trendStartDate, endDate: trendEndDate }).catch(() => []),
   ]);
 
   // Completed months only; the current month is shown live instead.
+  const movementByMonth = new Map(
+    tofuRows.filter((r) => r.groupType === "overall").map((r) => [r.monthKey, r] as const),
+  );
   const trend: HomeTrendPoint[] = monthly.map((m) => {
     const legacyArr = round2(legacyMonthly.get(m.monthKey) || 0);
+    const mv = movementByMonth.get(m.monthKey);
     return {
+      movement: mv
+        ? {
+            newArr: round2(mv.newArr),
+            expansionArr: round2(mv.expansionArr),
+            contractionArr: round2(Math.abs(mv.contractionArr)),
+            churnArr: round2(Math.abs(mv.churnArr)),
+          }
+        : undefined,
       monthKey: m.monthKey,
       selfServeArr: round2(m.stripeArr),
       salesLedCloudArr: round2(m.hubspotArr),
@@ -187,7 +192,6 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
   const last = trend[trend.length - 1];
   const previous = trend[trend.length - 2];
 
-  const overallMovement = tofuRows.find((r) => r.groupType === "overall" && r.monthKey === lastMonthKey);
   const lastMonthRow = monthly.find((m) => m.monthKey === lastMonthKey);
   const previousMonthRow = monthly.find((m) => m.monthKey === shiftMonthKey(lastMonthKey, -1));
 
@@ -220,17 +224,6 @@ export async function buildHomeSummaryPayload(): Promise<HomeSummaryPayload> {
           combined: retentionFigures(retentionRows),
           salesLed: retentionFigures(retentionRows.filter((r) => r.source === "hubspot_account")),
           selfServe: retentionFigures(retentionRows.filter((r) => r.source !== "hubspot_account")),
-        }
-      : null,
-    movement: overallMovement
-      ? {
-          monthKey: lastMonthKey,
-          beginningArr: round2(overallMovement.beginningArr),
-          newArr: round2(overallMovement.newArr),
-          expansionArr: round2(overallMovement.expansionArr),
-          contractionArr: round2(overallMovement.contractionArr),
-          churnArr: round2(overallMovement.churnArr),
-          endingArr: round2(overallMovement.endingArr),
         }
       : null,
     payingCustomers: lastMonthRow

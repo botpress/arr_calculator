@@ -247,8 +247,6 @@ export default function HomeDashboard() {
         </section>
       )}
 
-      {data.movement && <MovementWaterfall movement={data.movement} />}
-
       <div className="home-columns">
         <section className="home-card">
           <p className="home-label">ARR by month-end</p>
@@ -305,6 +303,15 @@ export default function HomeDashboard() {
                           </span>
                         </div>
                       ))}
+                      {"movement" in bar && bar.movement && (
+                        <div className="home-tooltip__section">
+                          <p className="home-tooltip__subtitle">Cloud ARR movement in the month</p>
+                          <div className="home-tooltip__row"><span>New</span><span className="home-num">+{formatMoney(bar.movement.newArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Expansion</span><span className="home-num">+{formatMoney(bar.movement.expansionArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Contraction</span><span className="home-num">−{formatMoney(bar.movement.contractionArr)}</span></div>
+                          <div className="home-tooltip__row"><span>Churn</span><span className="home-num">−{formatMoney(bar.movement.churnArr)}</span></div>
+                        </div>
+                      )}
                       {change !== null && previous && (
                         <p className={`home-tooltip__change ${change >= 0 ? "home-good" : "home-bad"}`}>
                           {formatSignedMoney(change)} vs {previous.isLive ? "today" : monthLabel(previous.monthKey)}
@@ -400,62 +407,3 @@ export default function HomeDashboard() {
   );
 }
 
-function MovementWaterfall({ movement }: { movement: NonNullable<HomeSummaryPayload["movement"]> }) {
-  const steps = [
-    { label: "Start", value: movement.beginningArr, kind: "total" as const },
-    { label: "New", value: movement.newArr, kind: "up" as const },
-    { label: "Expansion", value: movement.expansionArr, kind: "up" as const },
-    { label: "Contraction", value: -Math.abs(movement.contractionArr), kind: "down" as const },
-    { label: "Churn", value: -Math.abs(movement.churnArr), kind: "down" as const },
-    { label: "End", value: movement.endingArr, kind: "total" as const },
-  ];
-  // Running level after each step; deltas float between the previous and next level.
-  let level = 0;
-  const bars = steps.map((step) => {
-    if (step.kind === "total") {
-      level = step.value;
-      return { ...step, low: 0, high: step.value };
-    }
-    const from = level;
-    level = level + step.value;
-    return { ...step, low: Math.min(from, level), high: Math.max(from, level) };
-  });
-  // The axis starts near the lowest level so the monthly changes are visible next to the totals.
-  const levels = bars.flatMap((b) => (b.kind === "total" ? [b.high] : [b.low, b.high]));
-  const min = Math.min(...levels);
-  const max = Math.max(...levels);
-  const pad = Math.max((max - min) * 0.6, max * 0.01);
-  const floor = Math.max(0, min - pad);
-  const top = max + pad * 0.3;
-  const pct = (v: number) => ((v - floor) / (top - floor)) * 100;
-  const net = movement.endingArr - movement.beginningArr;
-
-  return (
-    <section className="home-card home-waterfall">
-      <p className="home-label">
-        Cloud ARR movement in {monthLabel(movement.monthKey, true)}{" "}
-        <span className={net >= 0 ? "home-good" : "home-bad"}>({formatSignedMoney(net)} net)</span>
-      </p>
-      <div className="home-waterfall__plot" role="img" aria-label={`ARR movement: ${steps.map((s) => `${s.label} ${formatMoney(s.value)}`).join(", ")}`}>
-        {bars.map((bar) => (
-          <div className="home-waterfall__col" key={bar.label}>
-            <div
-              className={`home-waterfall__bar home-waterfall__bar--${bar.kind}`}
-              style={{ bottom: `${bar.kind === "total" ? 0 : pct(bar.low)}%`, height: `${Math.max(0.8, pct(bar.high) - (bar.kind === "total" ? 0 : pct(bar.low)))}%` }}
-            >
-              <span className="home-waterfall__value">
-                {bar.kind === "total" ? formatMoney(bar.value) : formatSignedMoney(bar.value)}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="home-waterfall__labels">
-        {bars.map((bar) => (
-          <span key={bar.label}>{bar.label}</span>
-        ))}
-      </div>
-      <p className="home-muted">Axis starts near the lowest level so changes are visible. Legacy contracts aren&apos;t included.</p>
-    </section>
-  );
-}
