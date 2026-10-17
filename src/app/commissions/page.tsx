@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CommissionDealRow, CommissionReportResponse } from "@/lib/commissionsReport";
+import type {
+  CommissionDealRow,
+  CommissionReportResponse,
+  CommissionWatchStatus,
+} from "@/lib/commissionsReport";
+import type { CommissionFlagType } from "@/lib/commissionFlags";
 import type { SalesQuotaProgress, TeamSalesQuotaProgress } from "@/lib/salesQuotaRules";
 import type { SalesQuotaReportResponse } from "@/lib/salesQuotaReport";
 
@@ -50,19 +55,73 @@ function quotaPeriodLabel(quota: SalesQuotaProgress) {
 
 type QuotaChartRow = SalesQuotaProgress | TeamSalesQuotaProgress;
 
+const FLAG_LABELS: Record<CommissionFlagType, string> = {
+  duplicate: "Duplicate (not paid)",
+  no_increase: "No increase (not paid)",
+  billing_not_updated: "Billing not updated",
+  possible_duplicate: "Possible duplicate",
+  price_mismatch: "Price mismatch",
+  cancellation_untrackable: "Cancellation untrackable",
+  owner_unknown: "Owner unknown",
+};
+
+const FLAG_ORDER: CommissionFlagType[] = [
+  "duplicate",
+  "no_increase",
+  "billing_not_updated",
+  "possible_duplicate",
+  "price_mismatch",
+  "cancellation_untrackable",
+  "owner_unknown",
+];
+
+function flagColors(type: CommissionFlagType) {
+  return type === "duplicate" || type === "no_increase"
+    ? { color: "#b42318", background: "#f8e3df", borderColor: "#e8b4aa" }
+    : { color: "#8b4804", background: "#f6ebdc", borderColor: "#e0dbd2" };
+}
+
+const WATCH_LABELS: Record<CommissionWatchStatus, string> = {
+  paying: "Paying",
+  cancelled_clawback: "Cancelled → clawback",
+  plan_changed_clawback: "Plan changed → clawback",
+  untrackable: "Can't track",
+};
+
+function watchColor(status: CommissionWatchStatus) {
+  if (status === "paying") return "#3d7a33";
+  if (status === "untrackable") return "#8b4804";
+  return "#b42318";
+}
+
+function formatTimestamp(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+    timeZoneName: "short",
+  }).format(parsed);
+}
+
 function statusLabel(row: CommissionDealRow) {
+  if (row.status === "duplicate") return `Duplicate of ${row.duplicateOfDealName || `#${row.duplicateOfDealId}`}`;
   if (row.status === "clawback") {
     const label = row.clawbackType === "upgrade" ? "Upgrade" : row.clawbackType === "downgrade" ? "Downgrade" : "Churn";
     return `${label} clawback`;
   }
   if (row.status === "protected") return "3-month payment cleared";
-  if (row.status === "unmapped") return "Stripe mapping missing";
-  if (row.status === "ineligible") return "Frequency ineligible";
+  if (row.status === "unmapped") return "Stripe mapping missing · can't track cancellation";
+  if (row.status === "ineligible") return row.grossCommission === 0 && row.initialGrossCommission > 0 ? "Not commissionable" : "Frequency ineligible";
   return "Monitoring first 3 months";
 }
 
 function statusColor(row: CommissionDealRow) {
-  if (row.status === "clawback") return "#b42318";
+  if (row.status === "clawback" || row.status === "duplicate") return "#b42318";
   if (row.status === "protected") return "#3d7a33";
   if (row.status === "unmapped" || row.status === "ineligible") return "#8b4804";
   return "#2863b0";
@@ -77,8 +136,11 @@ export default function CommissionsPage() {
   const [quotaLoading, setQuotaLoading] = useState(true);
   const [quotaError, setQuotaError] = useState("");
   const [showUnmappedDeals, setShowUnmappedDeals] = useState(false);
+  const [flagFilter, setFlagFilter] = useState<"" | "any" | CommissionFlagType>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [lockBusy, setLockBusy] = useState(false);
+  const [lockError, setLockError] = useState("");
 
   const loadQuota = useCallback(async () => {
     setQuotaLoading(true);
@@ -118,6 +180,8 @@ export default function CommissionsPage() {
       if (!payload) throw new Error("Empty commissions response");
       setData(payload);
       setOwnerFilter("");
+      setFlagFilter("");
+      setLockError("");
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load commissions");
       setData(null);
@@ -126,26 +190,67 @@ export default function CommissionsPage() {
     }
   }, [month]);
 
+  const changeLock = useCallback(async (action: "lock" | "unlock") => {
+    if (!data) return;
+    const prompt = action === "lock"
+      ? `Lock ${data.monthLabel}? This saves the current report as the paid snapshot. Later changes will appear as adjustments in the next open month.`
+      : `Unlock ${data.monthLabel}? The month will be recomputed from live data. The lock history is kept.`;
+    if (!window.confirm(prompt)) return;
+    setLockBusy(true);
+    setLockError("");
+    try {
+      const response = await fetch("/api/commissions/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: data.month, action, targetCurrency: data.targetCurrency }),
+      });
+      const text = await response.text();
+      const payload = text ? (JSON.parse(text) as { error?: string; report?: CommissionReportResponse }) : null;
+      if (!response.ok) throw new Error(payload?.error || text || `HTTP ${response.status}`);
+      if (action === "lock" && payload?.report) setData(payload.report);
+      else await run();
+    } catch (requestError: unknown) {
+      setLockError(requestError instanceof Error ? requestError.message : "Unable to update the month lock");
+    } finally {
+      setLockBusy(false);
+    }
+  }, [data, run]);
+
   const currency = data?.targetCurrency || "USD";
   const filteredOwners = useMemo(() => {
     if (!data) return [];
-    if (!ownerFilter) return data.owners;
-    return data.owners.filter((owner) => (owner.ownerId || "unassigned") === ownerFilter);
-  }, [data, ownerFilter]);
+    const owners = ownerFilter
+      ? data.owners.filter((owner) => (owner.ownerId || "unassigned") === ownerFilter)
+      : data.owners;
+    if (!flagFilter) return owners;
+    return owners
+      .map((owner) => ({
+        ...owner,
+        deals: owner.deals.filter((deal) =>
+          flagFilter === "any" ? (deal.flags || []).length > 0 : (deal.flags || []).some((flag) => flag.type === flagFilter),
+        ),
+      }))
+      .filter((owner) => owner.deals.length > 0);
+  }, [data, ownerFilter, flagFilter]);
+  const flaggedRowCount = useMemo(
+    () => (data?.owners || []).reduce((count, owner) => count + owner.deals.filter((deal) => (deal.flags || []).length).length, 0),
+    [data],
+  );
   const filteredTotals = useMemo(() => {
     if (!data || !ownerFilter) return data?.totals;
-    return filteredOwners.reduce(
+    return data.owners.filter((owner) => (owner.ownerId || "unassigned") === ownerFilter).reduce(
       (totals, owner) => ({
         ownerCount: totals.ownerCount + 1,
         dealCount: totals.dealCount + owner.dealCount,
         dealAmount: totals.dealAmount + owner.dealAmount,
         grossCommission: totals.grossCommission + owner.grossCommission,
         clawback: totals.clawback + owner.clawback,
+        adjustment: totals.adjustment + (owner.adjustment || 0),
         netCommission: totals.netCommission + owner.netCommission,
       }),
-      { ownerCount: 0, dealCount: 0, dealAmount: 0, grossCommission: 0, clawback: 0, netCommission: 0 },
+      { ownerCount: 0, dealCount: 0, dealAmount: 0, grossCommission: 0, clawback: 0, adjustment: 0, netCommission: 0 },
     );
-  }, [data, filteredOwners, ownerFilter]);
+  }, [data, ownerFilter]);
 
   return (
     <div className="stripe-ui">
@@ -313,7 +418,34 @@ export default function CommissionsPage() {
       {data && filteredTotals ? (
         <>
           <section className="stripe-ui__panel ui-reveal ui-reveal-2">
-            <h2 className="stripe-ui__panel-title">{data.monthLabel} summary</h2>
+            <div className="stripe-ui__hero-row" style={{ alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <h2 className="stripe-ui__panel-title">{data.monthLabel} summary</h2>
+              {data.canManageLocks ? (
+                data.lock?.locked ? (
+                  <button className="stripe-ui__btn stripe-ui__btn--secondary" type="button" onClick={() => void changeLock("unlock")} disabled={lockBusy}>
+                    {lockBusy ? "Unlocking…" : "Unlock month"}
+                  </button>
+                ) : (
+                  <button className="stripe-ui__btn stripe-ui__btn--primary" type="button" onClick={() => void changeLock("lock")} disabled={lockBusy}>
+                    {lockBusy ? "Locking…" : "Lock month"}
+                  </button>
+                )
+              ) : null}
+            </div>
+            {data.lock?.locked ? (
+              <p style={{ color: "#3d7a33", background: "#f8f7f4", border: "1px solid #e0dbd2", borderRadius: 8, padding: "10px 12px", fontWeight: 700 }}>
+                Locked on {formatTimestamp(data.lock.lockedAt)} by {data.lock.lockedByName || data.lock.lockedByEmail}. This is the saved snapshot; later changes appear as adjustments in the next open month.
+              </p>
+            ) : (
+              <p style={{ color: "#625d54", marginTop: 0 }}>
+                Open month: computed from live data{data.adjustments?.length ? ", including adjustments for earlier locked months" : ""}.
+              </p>
+            )}
+            {lockError ? (
+              <p style={{ color: "#b42318", background: "#f8e3df", border: "1px solid #e8b4aa", borderRadius: 8, padding: "10px 12px" }}>
+                {lockError}
+              </p>
+            ) : null}
             <div className="stripe-ui__stats" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
               <article className="stripe-ui__stat">
                 <p className="stripe-ui__stat-label">Deal owners</p>
@@ -337,11 +469,59 @@ export default function CommissionsPage() {
                   {formatMoney(filteredTotals.clawback, currency)}
                 </p>
               </article>
+              {filteredTotals.adjustment ? (
+                <article className="stripe-ui__stat">
+                  <p className="stripe-ui__stat-label">Adjustments (locked months)</p>
+                  <p className="stripe-ui__stat-value" style={{ color: filteredTotals.adjustment < 0 ? "#b42318" : undefined }}>
+                    {formatMoney(filteredTotals.adjustment, currency)}
+                  </p>
+                </article>
+              ) : null}
               <article className="stripe-ui__stat">
                 <p className="stripe-ui__stat-label">Net commission</p>
                 <p className="stripe-ui__stat-value">{formatMoney(filteredTotals.netCommission, currency)}</p>
               </article>
             </div>
+            {data.flagSummary ? (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ color: "#625d54", fontSize: 13 }}>
+                  {flaggedRowCount} flagged row{flaggedRowCount === 1 ? "" : "s"} to review before paying. Click a flag to show only those rows.
+                </div>
+                <div className="stripe-ui__chips">
+                  <button
+                    type="button"
+                    className="stripe-ui__chip"
+                    aria-pressed={flagFilter === "any"}
+                    onClick={() => setFlagFilter((current) => (current === "any" ? "" : "any"))}
+                    style={{ cursor: "pointer", fontWeight: flagFilter === "any" ? 700 : 400 }}
+                  >
+                    All flagged ({flaggedRowCount})
+                  </button>
+                  {FLAG_ORDER.map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className="stripe-ui__chip"
+                      aria-pressed={flagFilter === type}
+                      disabled={!data.flagSummary[type]}
+                      onClick={() => setFlagFilter((current) => (current === type ? "" : type))}
+                      style={{
+                        cursor: data.flagSummary[type] ? "pointer" : "default",
+                        fontWeight: flagFilter === type ? 700 : 400,
+                        ...(data.flagSummary[type] ? flagColors(type) : { color: "#625d54" }),
+                      }}
+                    >
+                      {FLAG_LABELS[type]} ({data.flagSummary[type] || 0})
+                    </button>
+                  ))}
+                  {flagFilter ? (
+                    <button type="button" className="stripe-ui__chip" onClick={() => setFlagFilter("")} style={{ cursor: "pointer" }}>
+                      Clear filter
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {data.warnings.length ? (
               <div className="commissions-warning">
                 {data.warnings.map((warning) => <div key={warning}>{warning}</div>)}
@@ -385,6 +565,7 @@ export default function CommissionsPage() {
                 </div>
                 <div style={{ color: "#625d54", textAlign: "right" }}>
                   Gross {formatMoney(owner.grossCommission, currency)} · Clawback {formatMoney(owner.clawback, currency)}
+                  {owner.adjustment ? <> · Adjustments {formatMoney(owner.adjustment, currency)}</> : null}
                 </div>
               </div>
               <div className="stripe-ui__table-wrap">
@@ -411,6 +592,24 @@ export default function CommissionsPage() {
                             {deal.dealName}
                           </a>
                           <div style={{ color: "#625d54", fontSize: 12 }}>#{deal.dealId}</div>
+                          {(deal.flags || []).length ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                              {deal.flags.map((flag) => (
+                                <span
+                                  key={flag.type}
+                                  title={flag.message}
+                                  style={{ ...flagColors(flag.type), border: "1px solid", fontSize: 11, fontWeight: 700, padding: "1px 6px" }}
+                                >
+                                  {FLAG_LABELS[flag.type]}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                          {(deal.flags || []).map((flag) => (
+                            <div key={flag.type} style={{ color: flagColors(flag.type).color, fontSize: 12, maxWidth: 280 }}>
+                              {flag.message}
+                            </div>
+                          ))}
                         </td>
                         <td>
                           <div>{deal.closeDate}</div>
@@ -475,21 +674,127 @@ export default function CommissionsPage() {
                   </tbody>
                 </table>
               </div>
+              {!flagFilter && owner.adjustments?.length ? (
+                <div className="stripe-ui__table-wrap" style={{ marginTop: 12 }}>
+                  <table className="stripe-ui__table">
+                    <thead>
+                      <tr>
+                        <th>Adjustment</th>
+                        <th>Deal</th>
+                        <th>Previously paid</th>
+                        <th>Now due</th>
+                        <th>Adjustment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {owner.adjustments.map((adjustment) => (
+                        <tr key={`${adjustment.forMonth}|${adjustment.dealId}|${adjustment.kind}`}>
+                          <td style={{ maxWidth: 360 }}>
+                            <strong>Adjustment for {adjustment.forMonth}:</strong> {adjustment.reason}
+                            <div style={{ color: "#625d54", fontSize: 12, textTransform: "capitalize" }}>{adjustment.kind}</div>
+                          </td>
+                          <td>
+                            {adjustment.hubspotUrl ? (
+                              <a href={adjustment.hubspotUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>{adjustment.dealName}</a>
+                            ) : adjustment.dealName}
+                            <div style={{ color: "#625d54", fontSize: 12 }}>#{adjustment.dealId}</div>
+                          </td>
+                          <td>{formatMoney(adjustment.previousAmount, currency)}</td>
+                          <td>{formatMoney(adjustment.currentAmount, currency)}</td>
+                          <td style={{ fontWeight: 700, color: adjustment.amount < 0 ? "#b42318" : undefined }}>
+                            {formatMoney(adjustment.amount, currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </section>
           )) : (
             <section className="stripe-ui__panel ui-reveal">
-              <h2 className="stripe-ui__panel-title">No commission activity</h2>
-              <p className="stripe-ui__panel-subtitle">No new commissions or one-time clawbacks were found for {data.monthLabel}.</p>
+              <h2 className="stripe-ui__panel-title">{flagFilter ? "No flagged rows" : "No commission activity"}</h2>
+              <p className="stripe-ui__panel-subtitle">
+                {flagFilter
+                  ? "No rows match the selected flag."
+                  : `No new commissions or one-time clawbacks were found for ${data.monthLabel}.`}
+              </p>
             </section>
           )}
+
+          {data.clawbackWatchList ? (
+            <section className="stripe-ui__panel ui-reveal">
+              <h2 className="stripe-ui__panel-title">Clawback watch list</h2>
+              <p className="stripe-ui__panel-subtitle">
+                Commissioned deals still inside their 3-month clawback window at the end of {data.monthLabel}, plus deals clawed back this month.
+              </p>
+              {data.clawbackWatchList.length ? (
+                <div className="stripe-ui__table-wrap">
+                  <table className="stripe-ui__table">
+                    <thead>
+                      <tr>
+                        <th>Deal</th>
+                        <th>Owner</th>
+                        <th>Closed</th>
+                        <th>Commission at risk</th>
+                        <th>Window ends</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.clawbackWatchList
+                        .filter((row) => !ownerFilter || (row.ownerId || "unassigned") === ownerFilter)
+                        .map((row) => (
+                          <tr key={row.dealId}>
+                            <td>
+                              <a href={row.hubspotUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>{row.dealName}</a>
+                              <div style={{ color: "#625d54", fontSize: 12 }}>#{row.dealId}</div>
+                            </td>
+                            <td>{row.ownerName}</td>
+                            <td>{row.closeDate}</td>
+                            <td>
+                              {formatMoney(row.commissionAtRisk, currency)}
+                              <div style={{ color: "#625d54", fontSize: 12 }}>
+                                of {formatMoney(row.grossCommission, currency)} · plan paid {formatMoney(row.paidAmount, currency)}
+                              </div>
+                            </td>
+                            <td>{row.windowEnd}</td>
+                            <td>
+                              <span style={{ color: watchColor(row.status), fontWeight: 700 }}>{WATCH_LABELS[row.status]}</span>
+                              {row.clawbackDate ? <div style={{ color: "#625d54", fontSize: 12 }}>{row.clawbackDate}</div> : null}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ color: "#625d54", marginBottom: 0 }}>No commissioned deals are inside a clawback window.</p>
+              )}
+            </section>
+          ) : null}
 
           <section className="stripe-ui__panel ui-reveal">
             <h2 className="stripe-ui__panel-title">Methodology</h2>
             <p className="stripe-ui__panel-subtitle">{data.methodology.clawbackRule}</p>
-            <p style={{ color: "#625d54", marginBottom: 0 }}>
-              HubSpot: {data.methodology.includedPipelines.join(" + ")} · Deal types: {data.methodology.dealTypes.join(" + ")} ({data.methodology.existingBusinessOwners.join(", ")}) · Rates: monthly 8%, quarterly 10%, annual 11%.{" "}
+            <p style={{ color: "#625d54" }}>
+              HubSpot: {data.methodology.includedPipelines.join(" + ")} · Deal types: {data.methodology.dealTypes.join(" + ")} · Rates: monthly 8%, quarterly 10%, annual 11%.{" "}
               Stripe source: {data.methodology.paymentSource}.
             </p>
+            <p style={{ color: "#625d54" }}>
+              Existing Business reps ({data.methodology.existingBusinessOwnerSource || "owner list"}): {data.methodology.existingBusinessOwners.join(", ")}.
+              {data.methodology.excludedOwners?.length ? (
+                <> No per-deal commission (directors, paid on team attainment): {data.methodology.excludedOwners.join(", ")}.</>
+              ) : null}
+            </p>
+            {data.methodology.flagRules?.length ? (
+              <ul style={{ color: "#625d54", paddingLeft: 18 }}>
+                {data.methodology.flagRules.map((rule) => <li key={rule}>{rule}</li>)}
+              </ul>
+            ) : null}
+            {data.methodology.lockRule ? (
+              <p style={{ color: "#625d54", marginBottom: 0 }}>{data.methodology.lockRule}</p>
+            ) : null}
           </section>
         </>
       ) : null}

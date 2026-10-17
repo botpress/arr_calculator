@@ -21,6 +21,11 @@ import {
   deriveCommissionRisksFromStripePlanEvents,
   isCommissionPlanActivityDescription,
   isCommissionPlanLineDescription,
+  EXCLUDED_OWNER_NOTE,
+  evaluateBillingSwitch,
+  isExcludedCommissionOwner,
+  resolveExcludedOwners,
+  resolveExistingBusinessOwnerConfig,
   shouldIncludeCommissionDeal,
   type CommissionDealRuleInput,
   type CommissionPaymentRuleInput,
@@ -28,12 +33,35 @@ import {
   type CommissionRiskType,
   type CommissionStripePlanEventInput,
 } from "@/lib/commissionRules";
+import {
+  annualizedDealAmount,
+  findPossibleDuplicateDeals,
+  findStrictDuplicateDeals,
+  findStrictDuplicateMatch,
+  isPriceMismatch,
+  monthlyStripePlanPrice,
+  selectStripePlanPriceForDeal,
+  type CommissionFlag,
+  type CommissionFlagType,
+  type StripePlanPriceObservation,
+} from "@/lib/commissionFlags";
+import {
+  computeLockAdjustments,
+  type CommissionAdjustment,
+  type CommissionLedgerEntry,
+  type CommissionLockedMonth,
+} from "@/lib/commissionLock";
 
 type PaymentFrequency = "monthly" | "quarterly" | "annual";
 
 export type CommissionReportRequest = {
   month: string;
   targetCurrency?: string;
+};
+
+export type CommissionReportOptions = {
+  /** Snapshots of locked months (any month); only those before the report month are used. */
+  lockedMonths?: CommissionLockedMonth[];
 };
 
 export type CommissionDealRow = {
@@ -65,8 +93,14 @@ export type CommissionDealRow = {
   clawbackType: CommissionRiskType | "";
   clawback: number;
   netCommission: number;
-  status: "protected" | "monitoring" | "clawback" | "unmapped" | "ineligible";
+  status: "protected" | "monitoring" | "clawback" | "unmapped" | "ineligible" | "duplicate";
   notes: string[];
+  flags: CommissionFlag[];
+  duplicateOfDealId: string;
+  duplicateOfDealName: string;
+  hubspotAnnualAmount: number;
+  stripePlanMonthlyPrice: number;
+  stripePlanAnnualPrice: number;
 };
 
 export type CommissionOwnerGroup = {
@@ -76,8 +110,35 @@ export type CommissionOwnerGroup = {
   dealAmount: number;
   grossCommission: number;
   clawback: number;
+  adjustment: number;
   netCommission: number;
   deals: CommissionDealRow[];
+  adjustments: CommissionAdjustment[];
+};
+
+export type CommissionWatchStatus = "paying" | "cancelled_clawback" | "plan_changed_clawback" | "untrackable";
+
+export type CommissionWatchRow = {
+  dealId: string;
+  dealName: string;
+  hubspotUrl: string;
+  ownerId: string;
+  ownerName: string;
+  closeDate: string;
+  grossCommission: number;
+  commissionAtRisk: number;
+  paidAmount: number;
+  windowEnd: string;
+  status: CommissionWatchStatus;
+  clawbackDate: string;
+};
+
+export type CommissionLockInfo = {
+  locked: boolean;
+  lockId: string;
+  lockedAt: string;
+  lockedByName: string;
+  lockedByEmail: string;
 };
 
 export type CommissionWarningDeal = {
@@ -100,9 +161,15 @@ export type CommissionReportResponse = {
     dealAmount: number;
     grossCommission: number;
     clawback: number;
+    adjustment: number;
     netCommission: number;
   };
   owners: CommissionOwnerGroup[];
+  adjustments: CommissionAdjustment[];
+  flagSummary: Record<CommissionFlagType, number>;
+  clawbackWatchList: CommissionWatchRow[];
+  lock: CommissionLockInfo | null;
+  canManageLocks?: boolean;
   warnings: string[];
   warningDetails: {
     unmappedStripeCustomerDeals: CommissionWarningDeal[];
@@ -111,6 +178,10 @@ export type CommissionReportResponse = {
     includedPipelines: string[];
     dealTypes: string[];
     existingBusinessOwners: string[];
+    existingBusinessOwnerSource: string;
+    excludedOwners: string[];
+    flagRules: string[];
+    lockRule: string;
     commissionRates: Record<PaymentFrequency, number>;
     clawbackRule: string;
     paymentSource: string;
@@ -137,6 +208,8 @@ type RawStripePayment = {
   amount: number;
   currency: string;
 };
+
+type RawStripePlanPrice = StripePlanPriceObservation;
 
 type RawStripeRisk = {
   eventId: string;
@@ -166,7 +239,6 @@ const DEFAULT_STRIPE_PRODUCTS_TABLE = "botpress-stripe-data-pipeline.stripe.prod
 const DEFAULT_STRIPE_MRR_EVENTS_TABLE =
   "botpress-stripe-data-pipeline.stripe.subscription_item_change_events_v2_beta";
 const DEFAULT_HUBSPOT_PORTAL_ID = "20692578";
-const DEFAULT_EXISTING_BUSINESS_OWNER_NAMES = ["Tyler", "Luca", "Evan", "Felipe", "Antonin", "Sarah"];
 
 function round2(value: number) {
   return Math.round((Number(value) || 0) * 100) / 100;
@@ -270,10 +342,11 @@ function envValue(name: string, fallback: string) {
   return String(process.env[name] || fallback).trim() || fallback;
 }
 
-function existingBusinessOwnerNames() {
-  const configured = String(process.env.COMMISSION_EXISTING_BUSINESS_OWNER_NAMES || "").trim();
-  const values = configured ? configured.split(/[;,|\n\r]+/) : DEFAULT_EXISTING_BUSINESS_OWNER_NAMES;
-  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
+function existingBusinessOwnerConfig() {
+  return resolveExistingBusinessOwnerConfig({
+    ownerIds: process.env.COMMISSION_EXISTING_BUSINESS_OWNER_IDS,
+    ownerNames: process.env.COMMISSION_EXISTING_BUSINESS_OWNER_NAMES,
+  });
 }
 
 function ownerIdentities(owner: HubspotOwner | undefined) {
@@ -315,7 +388,9 @@ function pipelineConfiguration() {
 
 async function queryStripeActivity(customerIds: string[], startDate: string, endDate: string) {
   const ids = Array.from(new Set(customerIds.map((id) => String(id || "").trim()).filter(Boolean)));
-  if (!ids.length) return { payments: [] as RawStripePayment[], risks: [] as RawStripeRisk[] };
+  if (!ids.length) {
+    return { payments: [] as RawStripePayment[], risks: [] as RawStripeRisk[], planPrices: [] as RawStripePlanPrice[] };
+  }
 
   const invoicesTable = safeBigQueryTable(
     envValue("BIGQUERY_STRIPE_INVOICES_TABLE", DEFAULT_STRIPE_INVOICES_TABLE),
@@ -482,6 +557,7 @@ parsed AS (
     event_timestamp,
     event_type,
     COALESCE(SAFE_CAST(JSON_VALUE(raw_json, '$.mrr_change') AS FLOAT64), 0) AS mrr_change,
+    COALESCE(SAFE_CAST(JSON_VALUE(raw_json, '$.quantity_change') AS FLOAT64), 0) AS quantity_change,
     COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.subscription_id')), ''), '') AS subscription_id,
     COALESCE(NULLIF(TRIM(JSON_VALUE(raw_json, '$.subscription_item_id')), ''), '') AS subscription_item_id,
     COALESCE(
@@ -537,8 +613,13 @@ SELECT DISTINCT
   FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%E3SZ', event_timestamp, 'UTC') AS occurred_at,
   UPPER(CAST(event_type AS STRING)) AS event_type,
   CAST(mrr_change AS FLOAT64) AS mrr_change,
+  CAST(quantity_change AS FLOAT64) AS quantity_change,
   subscription_id,
   price_id,
+  SAFE_CAST(price_row.unit_amount AS FLOAT64) / 100.0 AS price_unit_amount,
+  UPPER(TRIM(COALESCE(CAST(price_row.currency AS STRING), ''))) AS price_currency,
+  LOWER(TRIM(COALESCE(CAST(price_row.recurring_interval AS STRING), ''))) AS price_interval,
+  COALESCE(SAFE_CAST(price_row.recurring_interval_count AS INT64), 1) AS price_interval_count,
   COALESCE(
     NULLIF(TRIM(event_price_description), ''),
     NULLIF(TRIM(CAST(price_row.nickname AS STRING)), ''),
@@ -617,16 +698,35 @@ ORDER BY occurred_at ASC, event_id ASC`;
     }))
     .filter((payment) => payment.amount > 0);
 
+  const planEventRows = eventRows.filter((row) =>
+    isCommissionPlanActivityDescription([
+      String(row.price_description || ""),
+      String(row.product_description || ""),
+    ]),
+  );
+  // Plan starts give the recurring list price each customer was put on; used only for the
+  // HubSpot-vs-Stripe price_mismatch warning flag, never for commission amounts.
+  const planPrices: RawStripePlanPrice[] = planEventRows
+    .filter((row) => {
+      return String(row.event_type || "").toUpperCase() === "ACTIVE_START" && Number(row.mrr_change || 0) > 0;
+    })
+    .map((row) => ({
+      customerId: String(row.customer_id || ""),
+      priceId: String(row.price_id || ""),
+      occurredAt: String(row.occurred_at || ""),
+      unitAmount: Number(row.price_unit_amount || 0),
+      quantity: Math.max(1, Number(row.quantity_change || 0)),
+      currency: String(row.price_currency || "").toUpperCase(),
+      interval: String(row.price_interval || ""),
+      intervalCount: Number(row.price_interval_count || 1),
+    }))
+    .filter((price) => price.customerId && monthlyStripePlanPrice(price) > 0);
+
   return {
     payments,
+    planPrices,
     risks: deriveCommissionRisksFromStripePlanEvents(
-      eventRows
-      .filter((row) =>
-        isCommissionPlanActivityDescription([
-          String(row.price_description || ""),
-          String(row.product_description || ""),
-        ]),
-      )
+      planEventRows
       .map((row) => ({
         eventId: String(row.event_id || ""),
         customerId: String(row.customer_id || ""),
@@ -638,6 +738,47 @@ ORDER BY occurred_at ASC, event_id ASC`;
       } as CommissionStripePlanEventInput)),
     ).map((risk) => risk as RawStripeRisk),
   };
+}
+
+type RawMrrChange = {
+  customerId: string;
+  occurredAt: string;
+  currency: string;
+  mrrChange: number;
+  changeEvents: number;
+};
+
+// Daily net MRR changes per customer since the beginning, for the billing-switch rule.
+async function queryCustomerMrrChanges(customerIds: string[], endDate: string): Promise<RawMrrChange[]> {
+  const ids = Array.from(new Set(customerIds.map((id) => String(id || "").trim()).filter(Boolean)));
+  if (!ids.length) return [];
+  const eventsTable = safeBigQueryTable(
+    envValue("BIGQUERY_STRIPE_ARR_CORRECT_MRR_CHANGE_TABLE", DEFAULT_STRIPE_MRR_EVENTS_TABLE),
+  );
+  const params: BigQuerySqlParameter[] = [
+    ...ids.map((customerId, index) => ({ name: `customer_${index}`, type: "STRING" as const, value: customerId })),
+    { name: "end_date", type: "STRING", value: endDate },
+  ];
+  const sql = `
+SELECT
+  CAST(customer_id AS STRING) AS customer_id,
+  FORMAT_DATE('%Y-%m-%d', DATE(event_timestamp)) AS event_date,
+  UPPER(TRIM(COALESCE(CAST(currency AS STRING), 'USD'))) AS currency,
+  SUM(CAST(COALESCE(mrr_change, 0) AS FLOAT64)) / 100.0 AS mrr_change,
+  COUNTIF(COALESCE(mrr_change, 0) != 0) AS change_events
+FROM \`${eventsTable}\`
+WHERE CAST(customer_id AS STRING) IN (${ids.map((_, index) => `@customer_${index}`).join(", ")})
+  AND DATE(event_timestamp) <= DATE_ADD(DATE(@end_date), INTERVAL 8 DAY)
+GROUP BY customer_id, event_date, currency
+ORDER BY customer_id, event_date`;
+  const rows = await runBigQuerySqlRows(sql, params, { profile: "stripe_arr_correct" });
+  return rows.map((row) => ({
+    customerId: String(row.customer_id || ""),
+    occurredAt: `${String(row.event_date || "")}T00:00:00.000Z`,
+    currency: String(row.currency || "USD").toUpperCase(),
+    mrrChange: Number(row.mrr_change || 0),
+    changeEvents: Number(row.change_events || 0),
+  }));
 }
 
 function closestWorkspaceForActivity(
@@ -675,12 +816,23 @@ function dealTypeLabel(value: unknown) {
   return String(value || "").trim() || "Unknown";
 }
 
+function formatAmount(value: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 2 }).format(value);
+  } catch {
+    return `${currency} ${value.toFixed(2)}`;
+  }
+}
+
 function hubspotDealUrl(dealId: string) {
   const portalId = envValue("HUBSPOT_PORTAL_ID", DEFAULT_HUBSPOT_PORTAL_ID);
   return `https://app.hubspot.com/contacts/${encodeURIComponent(portalId)}/record/0-3/${encodeURIComponent(dealId)}`;
 }
 
-export async function generateCommissionReport(request: CommissionReportRequest): Promise<CommissionReportResponse> {
+export async function generateCommissionReport(
+  request: CommissionReportRequest,
+  options: CommissionReportOptions = {},
+): Promise<CommissionReportResponse> {
   const month = String(request.month || "").trim();
   if (!isIsoMonth(month)) throw new Error("Invalid month; expected YYYY-MM");
   const targetCurrency = String(request.targetCurrency || process.env.FX_TARGET_CURRENCY || "USD").trim().toUpperCase();
@@ -690,7 +842,11 @@ export async function generateCommissionReport(request: CommissionReportRequest)
   const lookbackMonths = Math.max(3, Math.min(60, Number(process.env.COMMISSION_CLAWBACK_LOOKBACK_MONTHS || 24)));
   const lookbackStartDate = addMonthsUtc(selected.start, -lookbackMonths).toISOString().slice(0, 10);
   const pipelines = pipelineConfiguration();
-  const includedExistingBusinessOwners = existingBusinessOwnerNames();
+  const existingBusinessOwners = existingBusinessOwnerConfig();
+  const excludedOwners = resolveExcludedOwners({ ownerIds: process.env.COMMISSION_EXCLUDED_OWNER_IDS });
+  const excludedOwnerIds = excludedOwners.map((owner) => owner.ownerId);
+  const existingBusinessOwnerIds =
+    existingBusinessOwners.mode === "ids" ? existingBusinessOwners.owners.map((owner) => owner.ownerId) : undefined;
   const warnings = new Set<string>();
   const dealProperties = [
     "dealname",
@@ -739,19 +895,40 @@ export async function generateCommissionReport(request: CommissionReportRequest)
   );
   let ownersById = new Map<string, HubspotOwner>();
   try {
-    ownersById = await fetchHubspotOwnersById(ownerIds);
+    ownersById = await fetchHubspotOwnersById([...ownerIds, ...(existingBusinessOwnerIds || []), ...excludedOwnerIds]);
   } catch {
-    warnings.add("HubSpot owner names were unavailable; owner IDs are shown instead and Existing Business deals could not be matched to the approved reps.");
+    warnings.add(
+      existingBusinessOwners.mode === "ids"
+        ? "HubSpot owner names were unavailable; owner IDs are shown instead."
+        : "HubSpot owner names were unavailable; owner IDs are shown instead and Existing Business deals could not be matched to the approved reps.",
+    );
   }
 
   const candidateDeals = dealsWithSupportedTypes.filter(({ deal }) => {
     const properties = deal.properties || {};
     const ownerId = String(properties.hubspot_owner_id || "").trim();
+    // Excluded owners' deals stay visible (as $0 ineligible rows) so nothing silently disappears.
+    if (isExcludedCommissionOwner(ownerId, excludedOwnerIds)) return true;
     return shouldIncludeCommissionDeal({
       dealType: String(properties.dealtype || ""),
+      ownerId,
+      existingBusinessOwnerIds,
       ownerIdentities: ownerIdentities(ownersById.get(ownerId)),
-      existingBusinessOwnerNames: includedExistingBusinessOwners,
+      existingBusinessOwnerNames: existingBusinessOwners.mode === "names" ? existingBusinessOwners.names : undefined,
     });
+  });
+  const existingBusinessOwnerLabels =
+    existingBusinessOwners.mode === "ids"
+      ? existingBusinessOwners.owners.map((owner) => {
+          const resolved = ownersById.get(owner.ownerId);
+          const name = resolved ? ownerDisplayName(resolved, owner.ownerId) : owner.name || `Owner ${owner.ownerId}`;
+          return `${name} (${owner.ownerId})`;
+        })
+      : existingBusinessOwners.names;
+  const excludedOwnerLabels = excludedOwners.map((owner) => {
+    const resolved = ownersById.get(owner.ownerId);
+    const name = resolved ? ownerDisplayName(resolved, owner.ownerId) : owner.name || `Owner ${owner.ownerId}`;
+    return `${name} (${owner.ownerId})`;
   });
 
   const dealIds = candidateDeals.map(({ deal }) => String(deal.id));
@@ -844,17 +1021,10 @@ export async function generateCommissionReport(request: CommissionReportRequest)
   }
   for (const deal of preparedDeals) deal.stripeCustomerIds = workspaceToCustomers.get(deal.workspaceId) || [];
 
-  const dealsByWorkspace = new Map<string, PreparedDeal[]>();
-  for (const deal of preparedDeals) {
-    if (!deal.workspaceId) continue;
-    if (!dealsByWorkspace.has(deal.workspaceId)) dealsByWorkspace.set(deal.workspaceId, []);
-    dealsByWorkspace.get(deal.workspaceId)!.push(deal);
-  }
-  for (const deals of dealsByWorkspace.values()) {
-    deals.sort((a, b) => Date.parse(a.effectiveStartDate) - Date.parse(b.effectiveStartDate));
-  }
-
-  const stripeActivity = await queryStripeActivity(mapping.customerIds, lookbackStartDate, selected.endDate);
+  const [stripeActivity, mrrChanges] = await Promise.all([
+    queryStripeActivity(mapping.customerIds, lookbackStartDate, selected.endDate),
+    queryCustomerMrrChanges(mapping.customerIds, selected.endDate),
+  ]);
   const paymentFxCache = new Map<string, Promise<number>>();
   async function paymentFxRate(currency: string, paidDate: string) {
     const normalizedCurrency = String(currency || "USD").trim().toUpperCase();
@@ -870,6 +1040,84 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     }
     return paymentFxCache.get(key)!;
   }
+
+  // Billing-switch rule: an existing paying customer whose MRR does not go up gets no commission.
+  const mrrChangesByCustomer = new Map<string, RawMrrChange[]>();
+  for (const change of mrrChanges) {
+    if (!mrrChangesByCustomer.has(change.customerId)) mrrChangesByCustomer.set(change.customerId, []);
+    mrrChangesByCustomer.get(change.customerId)!.push(change);
+  }
+  const billingSwitchNotes = new Map<string, string>();
+  const billingNotUpdatedNotes = new Map<string, string>();
+  for (const deal of preparedDeals) {
+    if (!(deal.grossCommission > 0) || !deal.stripeCustomerIds.length) continue;
+    const fxRate = await paymentFxRate("USD", deal.closeDate.slice(0, 10));
+    const changes: Array<{ occurredAt: string; mrrChange: number; changeEvents: number }> = [];
+    for (const customerId of deal.stripeCustomerIds) {
+      for (const change of mrrChangesByCustomer.get(customerId) || []) {
+        const rate = change.currency === "USD" ? fxRate : await paymentFxRate(change.currency, deal.closeDate.slice(0, 10));
+        if (rate > 0) {
+          changes.push({ occurredAt: change.occurredAt, mrrChange: change.mrrChange * rate, changeEvents: change.changeEvents });
+        }
+      }
+    }
+    const billingSwitch = evaluateBillingSwitch({ changes, closeDate: deal.closeDate });
+    if (billingSwitch.noIncrease) {
+      billingSwitchNotes.set(
+        deal.dealId,
+        `Billing switch only: customer already paid ${formatAmount(billingSwitch.mrrBefore, targetCurrency)}/mo and still pays ${formatAmount(billingSwitch.mrrAfter, targetCurrency)}/mo, no increase`,
+      );
+    } else if (billingSwitch.billingNotUpdated) {
+      billingNotUpdatedNotes.set(
+        deal.dealId,
+        `No billing change in Stripe since close; check the new plan was invoiced (Stripe still ${formatAmount(billingSwitch.mrrAfter, targetCurrency)}/mo, ${formatAmount(billingSwitch.mrrBefore, targetCurrency)}/mo before close)`,
+      );
+    }
+  }
+
+  const isExcludedDeal = (deal: PreparedDeal) => isExcludedCommissionOwner(deal.ownerId, excludedOwnerIds);
+  const isNoIncreaseDeal = (deal: PreparedDeal) => billingSwitchNotes.has(deal.dealId);
+  const duplicateCandidate = (deal: PreparedDeal) => ({
+    dealId: deal.dealId,
+    workspaceId: deal.workspaceId,
+    stripeCustomerIds: deal.stripeCustomerIds,
+    planKey: deal.planKey,
+    closeDate: deal.closeDate,
+    commissionable: deal.grossCommission > 0 && !isExcludedDeal(deal) && !isNoIncreaseDeal(deal),
+  });
+  // Strict duplicates (same customer, same plan, closed within 14 days) are one sale: only the
+  // earliest-closed deal is commissioned and tracked; the others are shown at $0.
+  const duplicateOf = findStrictDuplicateDeals(preparedDeals.map(duplicateCandidate));
+  const paidDuplicateCandidates = preparedDeals
+    .filter((deal) => !duplicateOf.has(deal.dealId))
+    .map(duplicateCandidate)
+    .filter((deal) => deal.commissionable);
+  // Excluded-owner deals are never paid; still tell the admin when one duplicates a paid deal.
+  for (const deal of preparedDeals) {
+    if (!isExcludedDeal(deal) || isNoIncreaseDeal(deal) || !(deal.grossCommission > 0)) continue;
+    const match = findStrictDuplicateMatch(duplicateCandidate(deal), paidDuplicateCandidates);
+    if (match) duplicateOf.set(deal.dealId, match.dealId);
+  }
+  const possibleDuplicates = findPossibleDuplicateDeals(preparedDeals.map(duplicateCandidate), {
+    excludeDealIds: duplicateOf.keys(),
+  });
+  const preparedById = new Map(preparedDeals.map((deal) => [deal.dealId, deal]));
+  // Duplicates, excluded-owner and billing-switch deals are left out of the clawback engine so
+  // they cannot absorb a paid deal's Stripe payments or plan-change events.
+  const ruleDeals = preparedDeals.filter(
+    (deal) => !duplicateOf.has(deal.dealId) && !isExcludedDeal(deal) && !isNoIncreaseDeal(deal),
+  );
+
+  const dealsByWorkspace = new Map<string, PreparedDeal[]>();
+  for (const deal of ruleDeals) {
+    if (!deal.workspaceId) continue;
+    if (!dealsByWorkspace.has(deal.workspaceId)) dealsByWorkspace.set(deal.workspaceId, []);
+    dealsByWorkspace.get(deal.workspaceId)!.push(deal);
+  }
+  for (const deals of dealsByWorkspace.values()) {
+    deals.sort((a, b) => Date.parse(a.effectiveStartDate) - Date.parse(b.effectiveStartDate));
+  }
+
 
   const payments: CommissionPaymentRuleInput[] = [];
   for (const payment of stripeActivity.payments) {
@@ -914,10 +1162,135 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     }));
 
   const ruleResults = new Map(
-    calculateCommissionClawbacks(preparedDeals, payments, riskEvents).map((result) => [result.dealId, result]),
+    calculateCommissionClawbacks(ruleDeals, payments, riskEvents).map((result) => [result.dealId, result]),
   );
+
+  const planPricesByCustomer = new Map<string, RawStripePlanPrice[]>();
+  for (const price of stripeActivity.planPrices) {
+    if (!planPricesByCustomer.has(price.customerId)) planPricesByCustomer.set(price.customerId, []);
+    planPricesByCustomer.get(price.customerId)!.push(price);
+  }
+  async function stripePlanPriceForDeal(deal: PreparedDeal) {
+    const observations = deal.stripeCustomerIds.flatMap((customerId) => planPricesByCustomer.get(customerId) || []);
+    const chosen = selectStripePlanPriceForDeal(observations, deal.closeDate);
+    if (!chosen) return null;
+    const fxRate = await paymentFxRate(chosen.currency || targetCurrency, chosen.occurredAt.slice(0, 10));
+    if (fxRate <= 0) return null;
+    return round2(monthlyStripePlanPrice(chosen) * fxRate);
+  }
+
+  function dealFlags(deal: PreparedDeal, paid: boolean) {
+    const flags: CommissionFlag[] = [];
+    const keptDealId = duplicateOf.get(deal.dealId);
+    if (keptDealId) {
+      const kept = preparedById.get(keptDealId);
+      flags.push({
+        type: "duplicate",
+        message: `Duplicate of ${kept?.dealName || "deal"} (#${keptDealId}), which keeps the commission. Merge or delete this deal in HubSpot.`,
+      });
+    }
+    const billingSwitchNote = billingSwitchNotes.get(deal.dealId);
+    if (billingSwitchNote && !isExcludedDeal(deal)) flags.push({ type: "no_increase", message: billingSwitchNote });
+    if (!paid) return flags;
+    const billingNotUpdatedNote = billingNotUpdatedNotes.get(deal.dealId);
+    if (billingNotUpdatedNote) flags.push({ type: "billing_not_updated", message: billingNotUpdatedNote });
+    const related = possibleDuplicates.get(deal.dealId) || [];
+    if (related.length) {
+      const names = related.map((dealId) => {
+        const other = preparedById.get(dealId);
+        return `${other?.dealName || "deal"} (#${dealId}, closed ${other?.closeDate.slice(0, 10) || "?"})`;
+      });
+      flags.push({
+        type: "possible_duplicate",
+        message: `Same customer has another commissioned deal within 90 days: ${names.join("; ")}. Check it is not the same sale.`,
+      });
+    }
+    if (!deal.workspaceId || !deal.stripeCustomerIds.length) {
+      flags.push({
+        type: "cancellation_untrackable",
+        message: deal.workspaceId
+          ? `No Stripe customer found for workspace ${deal.workspaceId}; a cancellation or plan change cannot be detected.`
+          : "No primary workspace ID on the deal; a cancellation or plan change cannot be detected.",
+      });
+    }
+    if (!deal.ownerId || !ownersById.has(deal.ownerId)) {
+      flags.push({
+        type: "owner_unknown",
+        message: deal.ownerId
+          ? `HubSpot owner ${deal.ownerId} could not be resolved to a name.`
+          : "Deal has no HubSpot owner.",
+      });
+    }
+    return flags;
+  }
+
+  function zeroRow(deal: PreparedDeal, status: CommissionDealRow["status"], note: string): CommissionDealRow {
+    const keptDealId = duplicateOf.get(deal.dealId) || "";
+    const kept = keptDealId ? preparedById.get(keptDealId) : undefined;
+    return {
+      dealId: deal.dealId,
+      dealName: deal.dealName,
+      hubspotUrl: hubspotDealUrl(deal.dealId),
+      ownerId: deal.ownerId,
+      ownerName: ownerDisplayName(ownersById.get(deal.ownerId), deal.ownerId),
+      pipelineId: deal.pipelineId,
+      pipelineName: deal.pipelineName,
+      dealType: deal.dealType,
+      closeDate: deal.closeDate.slice(0, 10),
+      workspaceId: deal.workspaceId,
+      stripeCustomerIds: deal.stripeCustomerIds,
+      paymentFrequency: deal.paymentFrequency,
+      commissionRatePct: deal.commissionRatePct,
+      termMonths: deal.termMonths,
+      dealCurrency: deal.dealCurrency,
+      dealAmountOriginal: deal.dealAmountOriginal,
+      dealAmount: deal.dealAmount,
+      initialGrossCommission: deal.grossCommission,
+      grossCommission: 0,
+      paidAmount: 0,
+      protectedAmount: 0,
+      monitoringStart: "",
+      fullyProtectedAt: "",
+      proratedOpeningPaymentAmount: 0,
+      clawbackEventDate: "",
+      clawbackType: "",
+      clawback: 0,
+      netCommission: 0,
+      status,
+      notes: [...deal.notes, note],
+      flags: dealFlags(deal, false),
+      duplicateOfDealId: keptDealId,
+      duplicateOfDealName: kept?.dealName || "",
+      hubspotAnnualAmount: annualizedDealAmount(deal.dealAmount, deal.termMonths),
+      stripePlanMonthlyPrice: 0,
+      stripePlanAnnualPrice: 0,
+    };
+  }
+
   const visibleRows: CommissionDealRow[] = [];
   for (const deal of preparedDeals) {
+    if (isExcludedDeal(deal)) {
+      if (commissionMonthKey(deal.closeDate) === month) visibleRows.push(zeroRow(deal, "ineligible", EXCLUDED_OWNER_NOTE));
+      continue;
+    }
+    const billingSwitchNote = billingSwitchNotes.get(deal.dealId);
+    if (billingSwitchNote) {
+      if (commissionMonthKey(deal.closeDate) === month) visibleRows.push(zeroRow(deal, "ineligible", billingSwitchNote));
+      continue;
+    }
+    const keptDealId = duplicateOf.get(deal.dealId);
+    if (keptDealId) {
+      if (commissionMonthKey(deal.closeDate) !== month) continue;
+      const kept = preparedById.get(keptDealId);
+      visibleRows.push(
+        zeroRow(
+          deal,
+          "duplicate",
+          `Not paid: duplicate of ${kept?.dealName || "deal"} (#${keptDealId}, closed ${kept?.closeDate.slice(0, 10) || "?"}). Merge or delete this deal in HubSpot.`,
+        ),
+      );
+      continue;
+    }
     const result = ruleResults.get(deal.dealId);
     if (!result) continue;
     const closeMonth = commissionMonthKey(deal.closeDate);
@@ -940,6 +1313,17 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     else if (!deal.workspaceId || !deal.stripeCustomerIds.length) status = "unmapped";
     else if (hasClawbackThisMonth) status = "clawback";
     else if (result.fullyProtectedAt) status = "protected";
+
+    const flags = dealFlags(deal, result.commissionableGrossCommission > 0);
+    const hubspotAnnualAmount = annualizedDealAmount(result.commissionableDealAmount, result.commissionableTermMonths);
+    const stripeMonthly = hasGrossThisMonth && grossCommission > 0 ? await stripePlanPriceForDeal(deal) : null;
+    const stripeAnnual = stripeMonthly ? round2(stripeMonthly * 12) : 0;
+    if (stripeMonthly && isPriceMismatch(hubspotAnnualAmount, stripeAnnual)) {
+      flags.push({
+        type: "price_mismatch",
+        message: `HubSpot ${formatAmount(hubspotAnnualAmount, targetCurrency)}/yr vs Stripe plan ${formatAmount(stripeMonthly, targetCurrency)}/mo × 12 = ${formatAmount(stripeAnnual, targetCurrency)}/yr. Check the HubSpot amount and price version.`,
+      });
+    }
 
     visibleRows.push({
       dealId: deal.dealId,
@@ -972,8 +1356,105 @@ export async function generateCommissionReport(request: CommissionReportRequest)
       netCommission: round2(grossCommission - clawback),
       status,
       notes: rowNotes,
+      flags,
+      duplicateOfDealId: "",
+      duplicateOfDealName: "",
+      hubspotAnnualAmount,
+      stripePlanMonthlyPrice: stripeMonthly || 0,
+      stripePlanAnnualPrice: stripeAnnual,
     });
   }
+
+  // Ledger of what today's data attributes to every month, used to diff against locked months.
+  const currentLedger: CommissionLedgerEntry[] = [];
+  for (const deal of ruleDeals) {
+    const result = ruleResults.get(deal.dealId);
+    if (!result) continue;
+    const base = {
+      dealId: deal.dealId,
+      dealName: deal.dealName,
+      ownerId: deal.ownerId,
+      ownerName: ownerDisplayName(ownersById.get(deal.ownerId), deal.ownerId),
+    };
+    if (result.commissionableGrossCommission > 0) {
+      currentLedger.push({
+        ...base,
+        month: commissionMonthKey(deal.closeDate),
+        kind: "commission",
+        amount: round2(result.commissionableGrossCommission),
+      });
+    }
+    if (result.clawback > 0 && result.riskEventDate) {
+      currentLedger.push({
+        ...base,
+        month: commissionMonthKey(result.riskEventDate),
+        kind: "clawback",
+        amount: round2(-result.clawback),
+      });
+    }
+  }
+  // Locked months older than this cannot be fully recomputed from the lookback window.
+  const earliestComparableMonth = commissionMonthKey(
+    addMonthsUtc(new Date(`${lookbackStartDate}T00:00:00.000Z`), 4).toISOString(),
+  );
+  const adjustments = computeLockAdjustments({
+    openMonth: month,
+    currentLedger,
+    lockedMonths: options.lockedMonths || [],
+    earliestComparableMonth,
+  }).map((adjustment) => ({ ...adjustment, hubspotUrl: hubspotDealUrl(adjustment.dealId) }));
+
+  // Clawback watch list: commissioned deals still inside their 3-month window at month end,
+  // plus deals clawed back this month.
+  const nextMonthStartMs = addMonthsUtc(selected.start, 1).getTime();
+  const clawbackWatchList: CommissionWatchRow[] = [];
+  for (const deal of ruleDeals) {
+    const result = ruleResults.get(deal.dealId);
+    if (!result || !(result.commissionableGrossCommission > 0)) continue;
+    if (Date.parse(deal.closeDate) >= nextMonthStartMs) continue;
+    const windowEndMs = Date.parse(result.protectedUntil);
+    let status: CommissionWatchStatus;
+    let commissionAtRisk: number;
+    if (result.riskEventId && result.clawback > 0) {
+      if (commissionMonthKey(result.riskEventDate) !== month) continue;
+      status = result.riskType === "churn" ? "cancelled_clawback" : "plan_changed_clawback";
+      commissionAtRisk = result.clawback;
+    } else {
+      if (result.fullyProtectedAt || !Number.isFinite(windowEndMs) || windowEndMs <= nextMonthStartMs) continue;
+      status = !deal.workspaceId || !deal.stripeCustomerIds.length ? "untrackable" : "paying";
+      const rate =
+        result.commissionableDealAmount > 0 ? result.commissionableGrossCommission / result.commissionableDealAmount : 0;
+      commissionAtRisk = round2(Math.max(0, result.commissionableGrossCommission - result.allocatedPaidAmount * rate));
+    }
+    clawbackWatchList.push({
+      dealId: deal.dealId,
+      dealName: deal.dealName,
+      hubspotUrl: hubspotDealUrl(deal.dealId),
+      ownerId: deal.ownerId,
+      ownerName: ownerDisplayName(ownersById.get(deal.ownerId), deal.ownerId),
+      closeDate: deal.closeDate.slice(0, 10),
+      grossCommission: result.commissionableGrossCommission,
+      commissionAtRisk,
+      paidAmount: result.riskEventId ? result.paidBeforeRisk : result.allocatedPaidAmount,
+      windowEnd: Number.isFinite(windowEndMs)
+        ? new Date(windowEndMs - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+        : "",
+      status,
+      clawbackDate: result.riskEventId ? result.riskEventDate.slice(0, 10) : "",
+    });
+  }
+  const watchOrder: Record<CommissionWatchStatus, number> = {
+    cancelled_clawback: 0,
+    plan_changed_clawback: 1,
+    untrackable: 2,
+    paying: 3,
+  };
+  clawbackWatchList.sort(
+    (a, b) =>
+      watchOrder[a.status] - watchOrder[b.status] ||
+      a.windowEnd.localeCompare(b.windowEnd) ||
+      a.dealName.localeCompare(b.dealName),
+  );
 
   const grouped = new Map<string, CommissionOwnerGroup>();
   for (const row of visibleRows) {
@@ -986,8 +1467,10 @@ export async function generateCommissionReport(request: CommissionReportRequest)
         dealAmount: 0,
         grossCommission: 0,
         clawback: 0,
+        adjustment: 0,
         netCommission: 0,
         deals: [],
+        adjustments: [],
       });
     }
     const owner = grouped.get(ownerKey)!;
@@ -997,6 +1480,27 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     owner.grossCommission = round2(owner.grossCommission + row.grossCommission);
     owner.clawback = round2(owner.clawback + row.clawback);
     owner.netCommission = round2(owner.netCommission + row.netCommission);
+  }
+  for (const adjustment of adjustments) {
+    const ownerKey = adjustment.ownerId || "unassigned";
+    if (!grouped.has(ownerKey)) {
+      grouped.set(ownerKey, {
+        ownerId: adjustment.ownerId,
+        ownerName: adjustment.ownerName,
+        dealCount: 0,
+        dealAmount: 0,
+        grossCommission: 0,
+        clawback: 0,
+        adjustment: 0,
+        netCommission: 0,
+        deals: [],
+        adjustments: [],
+      });
+    }
+    const owner = grouped.get(ownerKey)!;
+    owner.adjustments.push(adjustment);
+    owner.adjustment = round2(owner.adjustment + adjustment.amount);
+    owner.netCommission = round2(owner.netCommission + adjustment.amount);
   }
 
   const owners = Array.from(grouped.values())
@@ -1013,13 +1517,27 @@ export async function generateCommissionReport(request: CommissionReportRequest)
       dealAmount: round2(acc.dealAmount + owner.dealAmount),
       grossCommission: round2(acc.grossCommission + owner.grossCommission),
       clawback: round2(acc.clawback + owner.clawback),
+      adjustment: round2(acc.adjustment + owner.adjustment),
       netCommission: round2(acc.netCommission + owner.netCommission),
     }),
-    { ownerCount: 0, dealCount: 0, dealAmount: 0, grossCommission: 0, clawback: 0, netCommission: 0 },
+    { ownerCount: 0, dealCount: 0, dealAmount: 0, grossCommission: 0, clawback: 0, adjustment: 0, netCommission: 0 },
   );
 
-  const unmappedStripeCustomerDeals = preparedDeals
-    .filter((deal) => deal.workspaceId && !deal.stripeCustomerIds.length)
+  const flagSummary: Record<CommissionFlagType, number> = {
+    duplicate: 0,
+    no_increase: 0,
+    billing_not_updated: 0,
+    possible_duplicate: 0,
+    price_mismatch: 0,
+    cancellation_untrackable: 0,
+    owner_unknown: 0,
+  };
+  for (const row of visibleRows) {
+    for (const type of new Set(row.flags.map((flag) => flag.type))) flagSummary[type] += 1;
+  }
+
+  const unmappedStripeCustomerDeals = ruleDeals
+    .filter((deal) => deal.workspaceId && !deal.stripeCustomerIds.length && deal.grossCommission > 0)
     .map((deal) => ({
       dealId: deal.dealId,
       dealName: deal.dealName,
@@ -1033,7 +1551,7 @@ export async function generateCommissionReport(request: CommissionReportRequest)
   if (unmappedStripeCustomerDeals.length) {
     warnings.add("Some deals have no Stripe customer match for their primary workspace ID; those deals remain payable but cannot be clawback-checked.");
   }
-  if (preparedDeals.some((deal) => !deal.workspaceId)) {
+  if (ruleDeals.some((deal) => !deal.workspaceId && deal.grossCommission > 0)) {
     warnings.add("Some deals are missing a primary workspace ID; those deals remain payable but cannot be clawback-checked.");
   }
 
@@ -1044,6 +1562,10 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     generatedAt: new Date().toISOString(),
     totals,
     owners,
+    adjustments,
+    flagSummary,
+    clawbackWatchList,
+    lock: null,
     warnings: Array.from(warnings),
     warningDetails: {
       unmappedStripeCustomerDeals,
@@ -1051,7 +1573,25 @@ export async function generateCommissionReport(request: CommissionReportRequest)
     methodology: {
       includedPipelines: pipelines.map((pipeline) => pipeline.name),
       dealTypes: ["New Business", "Existing Business for approved reps"],
-      existingBusinessOwners: includedExistingBusinessOwners,
+      existingBusinessOwners: existingBusinessOwnerLabels,
+      existingBusinessOwnerSource:
+        existingBusinessOwners.source === "env_ids"
+          ? "HubSpot owner IDs from COMMISSION_EXISTING_BUSINESS_OWNER_IDS"
+          : existingBusinessOwners.source === "env_names"
+            ? "legacy first-name match from COMMISSION_EXISTING_BUSINESS_OWNER_NAMES"
+            : "built-in HubSpot owner IDs",
+      excludedOwners: excludedOwnerLabels,
+      flagRules: [
+        "Duplicate (not paid): 2+ commissionable deals for the same workspace or Stripe customer, on the same plan, closed within 14 days are one sale. The earliest-closed deal (lowest deal ID on a tie) is paid; the others show $0 until merged or deleted in HubSpot.",
+        "No increase (not paid): the customer already had Stripe recurring MRR 30 days before close, Stripe shows a billing change (subscription/price start, end or plan change) between the close day and 7 days after, and MRR after that is above $0 but not higher (a drop to $0 is a cancellation and goes through the clawback rule) (e.g. a monthly-to-annual switch at the same or a lower price). The baseline is 30 days before close because new customers often start paying before the deal is marked closed-won. New customers are unaffected; deals that raise MRR keep the full commission.",
+        "Billing not updated (warning, still paid): an existing paying customer whose MRR did not go up, but Stripe shows no billing change since close, so the new plan may not have been invoiced yet.",
+        "Possible duplicate (warning only): commissioned deals for the same workspace or Stripe customer closed within 90 days that are not strict duplicates or plan changes.",
+        "Price mismatch: the HubSpot amount annualized over its term differs by more than 15% from the Stripe plan list price × 12 at or after close. HubSpot stays the source of truth for the commission.",
+        "Cancellation untrackable: no workspace ID, or no Stripe customer for it, so a cancellation or plan change cannot trigger a clawback.",
+        "Owner unknown: the HubSpot owner ID does not resolve to a name.",
+      ],
+      lockRule:
+        "A locked month shows its saved snapshot. An open month compares today's data with every earlier locked month (including adjustments already paid in later locked months); any difference is paid or recovered as an adjustment line in the open month and counted in owner totals. Lock months in order.",
       commissionRates: COMMISSION_RATES,
       clawbackRule:
         "A churn or downgrade is assigned to one deal only. Stripe upgrades do not change commissions unless a qualifying replacement HubSpot deal exists; then the prior deal is retained only on its plan payments and the replacement deal is commissioned for the original contract's remaining months, with no overlap. The clawback window closes after three calendar months, or earlier once Stripe shows full plan payments for the first three eligible months. Commission at risk is retained only on plan payments net of refunds; for mid-month starts, the prorated opening month does not advance the clock, which begins on the next 1st.",
