@@ -58,6 +58,7 @@ type QuotaChartRow = SalesQuotaProgress | TeamSalesQuotaProgress;
 const FLAG_LABELS: Record<CommissionFlagType, string> = {
   duplicate: "Duplicate (not paid)",
   no_increase: "No increase (not paid)",
+  billing_not_updated: "Billing not updated",
   possible_duplicate: "Possible duplicate",
   price_mismatch: "Price mismatch",
   cancellation_untrackable: "Cancellation untrackable",
@@ -67,6 +68,7 @@ const FLAG_LABELS: Record<CommissionFlagType, string> = {
 const FLAG_ORDER: CommissionFlagType[] = [
   "duplicate",
   "no_increase",
+  "billing_not_updated",
   "possible_duplicate",
   "price_mismatch",
   "cancellation_untrackable",

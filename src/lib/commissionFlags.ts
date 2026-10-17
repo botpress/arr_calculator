@@ -8,7 +8,8 @@ export type CommissionFlagType =
   | "price_mismatch"
   | "cancellation_untrackable"
   | "owner_unknown"
-  | "no_increase";
+  | "no_increase"
+  | "billing_not_updated";
 
 export type CommissionFlag = {
   type: CommissionFlagType;

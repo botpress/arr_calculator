@@ -598,15 +598,24 @@ export function commissionMonthKey(value: string) {
 export type CommissionMrrChange = {
   /** When the MRR change happened (ISO timestamp or YYYY-MM-DD). */
   occurredAt: string;
-  /** Signed MRR change in the report currency (major units). */
+  /** Signed net MRR change in the report currency (major units). */
   mrrChange: number;
+  /**
+   * Number of Stripe item events with a non-zero MRR change behind this entry (a same-price
+   * monthly-to-annual switch nets to 0 but still has events). Defaults to 1 when mrrChange != 0.
+   */
+  changeEvents?: number;
 };
 
 export type CommissionBillingSwitchResult = {
   mrrBefore: number;
   mrrAfter: number;
-  /** True when the customer already paid recurring MRR and the deal did not increase it. */
+  /** Stripe shows a billing change (subscription/price start, end or plan change) from the close day to the end of the after window. */
+  billingChanged: boolean;
+  /** Existing paying customer, billing changed after close, and MRR did not go up: not paid. */
   noIncrease: boolean;
+  /** Existing paying customer, MRR did not go up, but Stripe shows no billing change since close: warn, still paid. */
+  billingNotUpdated: boolean;
 };
 
 // MRR "before" is measured this many days before the close day: new customers often start
@@ -619,6 +628,8 @@ export const BILLING_SWITCH_AFTER_DAYS = 7;
 /**
  * An existing customer who moves to a new (e.g. annual) contract without paying more earns no
  * commission. Compares the customer's running Stripe MRR before close with MRR right after it.
+ * The deal is zeroed only when Stripe actually shows a billing change after close; when it shows
+ * none (the new plan may not be invoiced yet) the deal is kept and flagged instead.
  * Customers with no prior MRR are never affected.
  */
 export function evaluateBillingSwitch(input: {
@@ -629,19 +640,32 @@ export function evaluateBillingSwitch(input: {
 }): CommissionBillingSwitchResult {
   const dayMs = 24 * 60 * 60 * 1000;
   const closeDay = dateMs(`${String(input.closeDate || "").slice(0, 10)}T00:00:00.000Z`);
-  if (!Number.isFinite(closeDay)) return { mrrBefore: 0, mrrAfter: 0, noIncrease: false };
+  if (!Number.isFinite(closeDay)) {
+    return { mrrBefore: 0, mrrAfter: 0, billingChanged: false, noIncrease: false, billingNotUpdated: false };
+  }
   const beforeCutoff = closeDay - (input.beforeDays ?? BILLING_SWITCH_BEFORE_DAYS) * dayMs;
   const afterCutoff = closeDay + ((input.afterDays ?? BILLING_SWITCH_AFTER_DAYS) + 1) * dayMs;
   let before = 0;
   let after = 0;
+  let billingChanged = false;
   for (const change of input.changes) {
     const at = dateMs(change.occurredAt);
+    if (!Number.isFinite(at)) continue;
     const amount = Number(change.mrrChange || 0);
-    if (!Number.isFinite(at) || !amount) continue;
+    const events = change.changeEvents ?? (amount ? 1 : 0);
+    if (events > 0 && at >= closeDay && at < afterCutoff) billingChanged = true;
+    if (!amount) continue;
     if (at < beforeCutoff) before += amount;
     if (at < afterCutoff) after += amount;
   }
   const mrrBefore = round2(Math.max(0, before));
   const mrrAfter = round2(Math.max(0, after));
-  return { mrrBefore, mrrAfter, noIncrease: mrrBefore > 0.005 && mrrAfter <= mrrBefore + 0.005 };
+  const existingWithoutIncrease = mrrBefore > 0.005 && mrrAfter <= mrrBefore + 0.005;
+  return {
+    mrrBefore,
+    mrrAfter,
+    billingChanged,
+    noIncrease: existingWithoutIncrease && billingChanged,
+    billingNotUpdated: existingWithoutIncrease && !billingChanged,
+  };
 }

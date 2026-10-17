@@ -745,6 +745,7 @@ type RawMrrChange = {
   occurredAt: string;
   currency: string;
   mrrChange: number;
+  changeEvents: number;
 };
 
 // Daily net MRR changes per customer since the beginning, for the billing-switch rule.
@@ -763,7 +764,8 @@ SELECT
   CAST(customer_id AS STRING) AS customer_id,
   FORMAT_DATE('%Y-%m-%d', DATE(event_timestamp)) AS event_date,
   UPPER(TRIM(COALESCE(CAST(currency AS STRING), 'USD'))) AS currency,
-  SUM(CAST(COALESCE(mrr_change, 0) AS FLOAT64)) / 100.0 AS mrr_change
+  SUM(CAST(COALESCE(mrr_change, 0) AS FLOAT64)) / 100.0 AS mrr_change,
+  COUNTIF(COALESCE(mrr_change, 0) != 0) AS change_events
 FROM \`${eventsTable}\`
 WHERE CAST(customer_id AS STRING) IN (${ids.map((_, index) => `@customer_${index}`).join(", ")})
   AND DATE(event_timestamp) <= DATE_ADD(DATE(@end_date), INTERVAL 8 DAY)
@@ -775,6 +777,7 @@ ORDER BY customer_id, event_date`;
     occurredAt: `${String(row.event_date || "")}T00:00:00.000Z`,
     currency: String(row.currency || "USD").toUpperCase(),
     mrrChange: Number(row.mrr_change || 0),
+    changeEvents: Number(row.change_events || 0),
   }));
 }
 
@@ -1045,14 +1048,17 @@ export async function generateCommissionReport(
     mrrChangesByCustomer.get(change.customerId)!.push(change);
   }
   const billingSwitchNotes = new Map<string, string>();
+  const billingNotUpdatedNotes = new Map<string, string>();
   for (const deal of preparedDeals) {
     if (!(deal.grossCommission > 0) || !deal.stripeCustomerIds.length) continue;
     const fxRate = await paymentFxRate("USD", deal.closeDate.slice(0, 10));
-    const changes: Array<{ occurredAt: string; mrrChange: number }> = [];
+    const changes: Array<{ occurredAt: string; mrrChange: number; changeEvents: number }> = [];
     for (const customerId of deal.stripeCustomerIds) {
       for (const change of mrrChangesByCustomer.get(customerId) || []) {
         const rate = change.currency === "USD" ? fxRate : await paymentFxRate(change.currency, deal.closeDate.slice(0, 10));
-        if (rate > 0) changes.push({ occurredAt: change.occurredAt, mrrChange: change.mrrChange * rate });
+        if (rate > 0) {
+          changes.push({ occurredAt: change.occurredAt, mrrChange: change.mrrChange * rate, changeEvents: change.changeEvents });
+        }
       }
     }
     const billingSwitch = evaluateBillingSwitch({ changes, closeDate: deal.closeDate });
@@ -1060,6 +1066,11 @@ export async function generateCommissionReport(
       billingSwitchNotes.set(
         deal.dealId,
         `Billing switch only: customer already paid ${formatAmount(billingSwitch.mrrBefore, targetCurrency)}/mo and still pays ${formatAmount(billingSwitch.mrrAfter, targetCurrency)}/mo, no increase`,
+      );
+    } else if (billingSwitch.billingNotUpdated) {
+      billingNotUpdatedNotes.set(
+        deal.dealId,
+        `No billing change in Stripe since close; check the new plan was invoiced (Stripe still ${formatAmount(billingSwitch.mrrAfter, targetCurrency)}/mo, ${formatAmount(billingSwitch.mrrBefore, targetCurrency)}/mo before close)`,
       );
     }
   }
@@ -1181,6 +1192,8 @@ export async function generateCommissionReport(
     const billingSwitchNote = billingSwitchNotes.get(deal.dealId);
     if (billingSwitchNote && !isExcludedDeal(deal)) flags.push({ type: "no_increase", message: billingSwitchNote });
     if (!paid) return flags;
+    const billingNotUpdatedNote = billingNotUpdatedNotes.get(deal.dealId);
+    if (billingNotUpdatedNote) flags.push({ type: "billing_not_updated", message: billingNotUpdatedNote });
     const related = possibleDuplicates.get(deal.dealId) || [];
     if (related.length) {
       const names = related.map((dealId) => {
@@ -1513,6 +1526,7 @@ export async function generateCommissionReport(
   const flagSummary: Record<CommissionFlagType, number> = {
     duplicate: 0,
     no_increase: 0,
+    billing_not_updated: 0,
     possible_duplicate: 0,
     price_mismatch: 0,
     cancellation_untrackable: 0,
@@ -1569,7 +1583,8 @@ export async function generateCommissionReport(
       excludedOwners: excludedOwnerLabels,
       flagRules: [
         "Duplicate (not paid): 2+ commissionable deals for the same workspace or Stripe customer, on the same plan, closed within 14 days are one sale. The earliest-closed deal (lowest deal ID on a tie) is paid; the others show $0 until merged or deleted in HubSpot.",
-        "No increase (not paid): the customer already had Stripe recurring MRR 30 days before close and its MRR up to 7 days after close is not higher (e.g. a monthly-to-annual switch at the same or a lower price). New customers are unaffected; deals that raise MRR keep the full commission.",
+        "No increase (not paid): the customer already had Stripe recurring MRR 30 days before close, Stripe shows a billing change (subscription/price start, end or plan change) between the close day and 7 days after, and MRR after that is not higher (e.g. a monthly-to-annual switch at the same or a lower price). The baseline is 30 days before close because new customers often start paying before the deal is marked closed-won. New customers are unaffected; deals that raise MRR keep the full commission.",
+        "Billing not updated (warning, still paid): an existing paying customer whose MRR did not go up, but Stripe shows no billing change since close, so the new plan may not have been invoiced yet.",
         "Possible duplicate (warning only): commissioned deals for the same workspace or Stripe customer closed within 90 days that are not strict duplicates or plan changes.",
         "Price mismatch: the HubSpot amount annualized over its term differs by more than 15% from the Stripe plan list price × 12 at or after close. HubSpot stays the source of truth for the commission.",
         "Cancellation untrackable: no workspace ID, or no Stripe customer for it, so a cancellation or plan change cannot trigger a clawback.",

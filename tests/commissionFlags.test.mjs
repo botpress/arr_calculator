@@ -173,7 +173,7 @@ test("billing switch: an existing customer whose MRR does not increase earns not
       { occurredAt: "2026-09-21T00:00:00.000Z", mrrChange: -89 },
     ],
   });
-  assert.deepEqual(result, { mrrBefore: 89, mrrAfter: 79, noIncrease: true });
+  assert.deepEqual(result, { mrrBefore: 89, mrrAfter: 79, billingChanged: true, noIncrease: true, billingNotUpdated: false });
 });
 
 test("billing switch: Yeesshh ($60/mo add-ons before, $159/mo after) still earns", () => {
@@ -188,7 +188,7 @@ test("billing switch: Yeesshh ($60/mo add-ons before, $159/mo after) still earns
       { occurredAt: "2026-10-14T00:00:00.000Z", mrrChange: 99 },
     ],
   });
-  assert.deepEqual(result, { mrrBefore: 60, mrrAfter: 159, noIncrease: false });
+  assert.deepEqual(result, { mrrBefore: 60, mrrAfter: 159, billingChanged: true, noIncrease: false, billingNotUpdated: false });
 });
 
 test("billing switch: new customers, and subscriptions started shortly before close, are unaffected", () => {
@@ -208,15 +208,50 @@ test("billing switch: new customers, and subscriptions started shortly before cl
     }).noIncrease,
     false,
   );
-  // Changes more than 7 days after close are ignored.
-  assert.deepEqual(
-    evaluateBillingSwitch({
-      closeDate: "2026-09-01T00:00:00.000Z",
-      changes: [
-        { occurredAt: "2026-01-01T00:00:00.000Z", mrrChange: 20 },
-        { occurredAt: "2026-09-09T00:00:00.000Z", mrrChange: 89 },
-      ],
-    }),
-    { mrrBefore: 20, mrrAfter: 20, noIncrease: true },
-  );
+});
+
+test("billing switch: no Stripe change since close keeps the commission and flags billing_not_updated", () => {
+  // Better Shelter: Team + Managed deal, Stripe still bills the old $66.75/mo plan (not invoiced yet).
+  const betterShelter = evaluateBillingSwitch({
+    closeDate: "2026-09-25T00:00:00.000Z",
+    changes: [{ occurredAt: "2026-04-02T00:00:00.000Z", mrrChange: 66.75 }],
+  });
+  assert.deepEqual(betterShelter, {
+    mrrBefore: 66.75,
+    mrrAfter: 66.75,
+    billingChanged: false,
+    noIncrease: false,
+    billingNotUpdated: true,
+  });
+  // A change more than 7 days after close is outside the window: still "not updated".
+  const late = evaluateBillingSwitch({
+    closeDate: "2026-09-01T00:00:00.000Z",
+    changes: [
+      { occurredAt: "2026-01-01T00:00:00.000Z", mrrChange: 20 },
+      { occurredAt: "2026-09-09T00:00:00.000Z", mrrChange: 89 },
+    ],
+  });
+  assert.equal(late.noIncrease, false);
+  assert.equal(late.billingNotUpdated, true);
+  // A same-price monthly-to-annual switch nets to $0 on the day but is still a billing change.
+  const samePrice = evaluateBillingSwitch({
+    closeDate: "2026-09-10T00:00:00.000Z",
+    changes: [
+      { occurredAt: "2026-02-01T00:00:00.000Z", mrrChange: 89, changeEvents: 1 },
+      { occurredAt: "2026-09-12T00:00:00.000Z", mrrChange: 0, changeEvents: 2 },
+    ],
+  });
+  assert.equal(samePrice.billingChanged, true);
+  assert.equal(samePrice.noIncrease, true);
+  // A change before the close day does not count as a change after close.
+  const beforeClose = evaluateBillingSwitch({
+    closeDate: "2026-07-02T00:00:00.000Z",
+    changes: [
+      { occurredAt: "2026-05-28T00:00:00.000Z", mrrChange: 89 },
+      { occurredAt: "2026-06-22T00:00:00.000Z", mrrChange: -89 },
+      { occurredAt: "2026-06-26T00:00:00.000Z", mrrChange: 89 },
+    ],
+  });
+  assert.equal(beforeClose.noIncrease, false);
+  assert.equal(beforeClose.billingNotUpdated, true);
 });
