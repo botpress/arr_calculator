@@ -210,6 +210,23 @@ test("billing switch: new customers, and subscriptions started shortly before cl
   );
 });
 
+test("billing switch: a cancellation within 7 days of close is left to the clawback rule", () => {
+  const cancelled = evaluateBillingSwitch({
+    closeDate: "2026-06-26T00:00:00.000Z",
+    changes: [
+      { occurredAt: "2026-03-01T00:00:00.000Z", mrrChange: 89 },
+      { occurredAt: "2026-06-29T00:00:00.000Z", mrrChange: -89 },
+    ],
+  });
+  assert.deepEqual(cancelled, {
+    mrrBefore: 89,
+    mrrAfter: 0,
+    billingChanged: true,
+    noIncrease: false,
+    billingNotUpdated: false,
+  });
+});
+
 test("billing switch: no Stripe change since close keeps the commission and flags billing_not_updated", () => {
   // Better Shelter: Team + Managed deal, Stripe still bills the old $66.75/mo plan (not invoiced yet).
   const betterShelter = evaluateBillingSwitch({

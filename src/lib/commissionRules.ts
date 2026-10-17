@@ -660,7 +660,8 @@ export function evaluateBillingSwitch(input: {
   }
   const mrrBefore = round2(Math.max(0, before));
   const mrrAfter = round2(Math.max(0, after));
-  const existingWithoutIncrease = mrrBefore > 0.005 && mrrAfter <= mrrBefore + 0.005;
+  // MRR falling to $0 is a cancellation, handled by the clawback rule, not a billing switch.
+  const existingWithoutIncrease = mrrBefore > 0.005 && mrrAfter > 0.005 && mrrAfter <= mrrBefore + 0.005;
   return {
     mrrBefore,
     mrrAfter,
