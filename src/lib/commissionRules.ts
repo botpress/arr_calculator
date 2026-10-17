@@ -238,17 +238,99 @@ export function deriveCommissionRisksFromStripePlanEvents(
   );
 }
 
+export type CommissionExistingBusinessOwner = {
+  ownerId: string;
+  name: string;
+};
+
+// The approved reps whose Existing Business deals are commissioned, by HubSpot owner id
+// (resolved from transformed_data.stg_hubspot_owners). Matching by id avoids first-name
+// collisions (the old name list matched any "Sarah", including Sarah Chudleigh in Marketing).
+export const DEFAULT_EXISTING_BUSINESS_OWNERS: CommissionExistingBusinessOwner[] = [
+  { ownerId: "83341410", name: "Tyler Toole" },
+  { ownerId: "83341425", name: "Luca Molinaro" },
+  { ownerId: "90624408", name: "Evan Stamegna" },
+  { ownerId: "90624409", name: "Felipe Garcia" },
+  { ownerId: "87328779", name: "Antonin Roussel" },
+];
+
+// Owners who earn no per-deal commission on any deal type. Sarah Rother is a director, paid on
+// her team's attainment only (she stays in the quota / team attainment section).
+export const DEFAULT_EXCLUDED_OWNERS: CommissionExistingBusinessOwner[] = [
+  { ownerId: "88054084", name: "Sarah Rother" },
+];
+
+export const EXCLUDED_OWNER_NOTE = "Director: paid on team attainment, not per deal";
+
+/** COMMISSION_EXCLUDED_OWNER_IDS (comma-separated HubSpot owner ids) overrides the default list. */
+export function resolveExcludedOwners(env: { ownerIds?: string }): CommissionExistingBusinessOwner[] {
+  const ids = splitConfigList(env.ownerIds || "");
+  if (!ids.length) return DEFAULT_EXCLUDED_OWNERS.map((owner) => ({ ...owner }));
+  const knownNames = new Map(DEFAULT_EXCLUDED_OWNERS.map((owner) => [owner.ownerId, owner.name]));
+  return ids.map((ownerId) => ({ ownerId, name: knownNames.get(ownerId) || "" }));
+}
+
+export function isExcludedCommissionOwner(ownerId: string, excludedOwnerIds: string[]) {
+  const id = String(ownerId || "").trim();
+  return !!id && excludedOwnerIds.some((excluded) => String(excluded || "").trim() === id);
+}
+
+export type CommissionExistingBusinessOwnerConfig =
+  | { mode: "ids"; owners: CommissionExistingBusinessOwner[]; source: "default" | "env_ids" }
+  | { mode: "names"; names: string[]; source: "env_names" };
+
+function splitConfigList(value: string) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(/[;,|\n\r]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+/**
+ * COMMISSION_EXISTING_BUSINESS_OWNER_IDS (comma-separated HubSpot owner ids) wins; the legacy
+ * COMMISSION_EXISTING_BUSINESS_OWNER_NAMES still works when set and no id list is given;
+ * otherwise the built-in owner ids are used.
+ */
+export function resolveExistingBusinessOwnerConfig(env: {
+  ownerIds?: string;
+  ownerNames?: string;
+}): CommissionExistingBusinessOwnerConfig {
+  const ids = splitConfigList(env.ownerIds || "");
+  if (ids.length) {
+    const knownNames = new Map(DEFAULT_EXISTING_BUSINESS_OWNERS.map((owner) => [owner.ownerId, owner.name]));
+    return {
+      mode: "ids",
+      owners: ids.map((ownerId) => ({ ownerId, name: knownNames.get(ownerId) || "" })),
+      source: "env_ids",
+    };
+  }
+  const names = splitConfigList(env.ownerNames || "");
+  if (names.length) return { mode: "names", names, source: "env_names" };
+  return { mode: "ids", owners: DEFAULT_EXISTING_BUSINESS_OWNERS.map((owner) => ({ ...owner })), source: "default" };
+}
+
 export function shouldIncludeCommissionDeal(input: {
   dealType: string;
-  ownerIdentities: string[];
-  existingBusinessOwnerNames: string[];
+  ownerId?: string;
+  existingBusinessOwnerIds?: string[];
+  ownerIdentities?: string[];
+  existingBusinessOwnerNames?: string[];
 }) {
   const dealType = normalizedWords(input.dealType).replace(/\s+/g, "");
   if (dealType === "newbusiness") return true;
   if (dealType !== "existingbusiness") return false;
 
-  const allowedOwners = new Set(input.existingBusinessOwnerNames.map(normalizedWords).filter(Boolean));
-  return input.ownerIdentities.some((identity) => allowedOwners.has(normalizedWords(identity)));
+  if (input.existingBusinessOwnerIds) {
+    const ownerId = String(input.ownerId || "").trim();
+    return !!ownerId && input.existingBusinessOwnerIds.some((allowed) => String(allowed || "").trim() === ownerId);
+  }
+
+  const allowedOwners = new Set((input.existingBusinessOwnerNames || []).map(normalizedWords).filter(Boolean));
+  return (input.ownerIdentities || []).some((identity) => allowedOwners.has(normalizedWords(identity)));
 }
 
 function sortedWorkspaceDeals(deals: CommissionDealRuleInput[]) {
@@ -511,4 +593,55 @@ export function calculateCommissionClawbacks(
 
 export function commissionMonthKey(value: string) {
   return monthKey(value);
+}
+
+export type CommissionMrrChange = {
+  /** When the MRR change happened (ISO timestamp or YYYY-MM-DD). */
+  occurredAt: string;
+  /** Signed MRR change in the report currency (major units). */
+  mrrChange: number;
+};
+
+export type CommissionBillingSwitchResult = {
+  mrrBefore: number;
+  mrrAfter: number;
+  /** True when the customer already paid recurring MRR and the deal did not increase it. */
+  noIncrease: boolean;
+};
+
+// MRR "before" is measured this many days before the close day: new customers often start
+// their Stripe subscription a few days (sometimes weeks) before the deal is marked closed-won,
+// and that start must not count as prior MRR.
+export const BILLING_SWITCH_BEFORE_DAYS = 30;
+// MRR "after" includes changes up to the end of this many days after the close day.
+export const BILLING_SWITCH_AFTER_DAYS = 7;
+
+/**
+ * An existing customer who moves to a new (e.g. annual) contract without paying more earns no
+ * commission. Compares the customer's running Stripe MRR before close with MRR right after it.
+ * Customers with no prior MRR are never affected.
+ */
+export function evaluateBillingSwitch(input: {
+  changes: CommissionMrrChange[];
+  closeDate: string;
+  beforeDays?: number;
+  afterDays?: number;
+}): CommissionBillingSwitchResult {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const closeDay = dateMs(`${String(input.closeDate || "").slice(0, 10)}T00:00:00.000Z`);
+  if (!Number.isFinite(closeDay)) return { mrrBefore: 0, mrrAfter: 0, noIncrease: false };
+  const beforeCutoff = closeDay - (input.beforeDays ?? BILLING_SWITCH_BEFORE_DAYS) * dayMs;
+  const afterCutoff = closeDay + ((input.afterDays ?? BILLING_SWITCH_AFTER_DAYS) + 1) * dayMs;
+  let before = 0;
+  let after = 0;
+  for (const change of input.changes) {
+    const at = dateMs(change.occurredAt);
+    const amount = Number(change.mrrChange || 0);
+    if (!Number.isFinite(at) || !amount) continue;
+    if (at < beforeCutoff) before += amount;
+    if (at < afterCutoff) after += amount;
+  }
+  const mrrBefore = round2(Math.max(0, before));
+  const mrrAfter = round2(Math.max(0, after));
+  return { mrrBefore, mrrAfter, noIncrease: mrrBefore > 0.005 && mrrAfter <= mrrBefore + 0.005 };
 }
